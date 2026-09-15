@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GOVCD | Government College Student Database System</title>
+  <link rel="icon" type="image/svg+xml" href="assets/images/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <style>
+    .landing-hero {
+      text-align: center;
+      padding: 48px 20px 32px;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .landing-hero h1 {
+      font-size: 28px;
+      font-weight: 900;
+      color: var(--text);
+      letter-spacing: -.5px;
+      margin-bottom: 8px;
+    }
+    .landing-hero p {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    .portal-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 18px;
+      max-width: 1200px;
+      margin: 0 auto 40px;
+      padding: 0 20px;
+    }
+    .portal-card {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      text-decoration: none;
+      color: var(--text);
+      transition: all .2s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: var(--sh-sm);
+    }
+    .portal-card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--sh-md);
+      border-color: var(--accent);
+    }
+    .pc-top {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+    .pc-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: var(--accent-light);
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+      border: 1px solid var(--border);
+    }
+    .pc-title h3 {
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: -.2px;
+      color: var(--text);
+    }
+    .pc-title p {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .pc-batches {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .pc-pill {
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: var(--surface-alt);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    .pc-pill.active {
+      background: var(--accent);
+      color: #FFFFFF;
+      border-color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+
+<!-- PIN Auth Overlay (329874) -->
+<div id="authOverlay">
+  <div class="auth-card">
+    <div class="auth-top">
+      <img src="assets/images/logo.svg" alt="GOVCD Logo" class="auth-logo">
+      <div class="auth-title">GOVCD CENTRAL PORTAL</div>
+      <div class="auth-sub">DHAKA BOARD HSC STUDENT ARCHIVE &bull; ACCESS PROTECTED</div>
+    </div>
+    <div class="auth-body">
+      <label class="auth-lbl" for="authPinInput">Enter Master PIN</label>
+      <input type="password" id="authPinInput" class="auth-input" maxlength="8" placeholder="••••••" autocomplete="off">
+      <div id="authErrMsg" class="auth-err"></div>
+      <button id="authSubmitBtn" class="auth-btn">
+        <i class="fa-solid fa-lock-open"></i> Unlock System
+      </button>
+    </div>
+  </div>
+</div>
+
+<header class="navbar">
+  <div class="nav-container">
+    <div class="nav-brand-group">
+      <a class="nav-brand" href="index.html">
+        <img src="assets/images/logo.svg" alt="GOVCD Logo" class="nav-logo">
+        <div class="nav-brand-text">
+          <h1>GOVCD</h1>
+          <p>GOVERNMENT COLLEGE DATABASE SYSTEM</p>
+        </div>
+      </a>
+    </div>
+
+    <div class="nav-actions">
+      <button class="icon-btn" id="themeToggleBtn" title="Toggle Theme">
+        <i class="fa-solid fa-sun"></i>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="landing-hero">
+  <h1>Unified Government College Database</h1>
+  <p>Comprehensive student admission archive for 6 leading government colleges under Dhaka Education Board. Browse student dossiers, admission rolls, academic records, and original receipts across batches HSC-19 to HSC-27.</p>
+</div>
+
+<div class="portal-grid">
+  <!-- Dhaka College -->
+  <a class="portal-card" href="../govcd/dc/index.html">
+    <div class="pc-top">
+      <div class="pc-icon"><i class="fa-solid fa-building-columns"></i></div>
+      <div class="pc-title">
+        <h3>Dhaka College (DC)</h3>
+        <p>Science, Humanities & Business Studies &bull; Est. 1841</p>
+      </div>
+    </div>
+    <div class="pc-batches">
+      <span class="pc-pill active">HSC-27</span>
+      <span class="pc-pill">HSC-26</span>
+      <span class="pc-pill">HSC-25</span>
+      <span class="pc-pill">HSC-24</span>
+      <span class="pc-pill">HSC-23...19</span>
+    </div>
+  </a>
+
+  <!-- Badrunnessa -->
+  <a class="portal-card" href="../govcd/bbggc/index.html">
+    <div class="pc-top">
+      <div class="pc-icon" style="background:#FDF2F8;color:#DB2777;"><i class="fa-solid fa-female"></i></div>
+      <div class="pc-title">
+        <h3>Begum Badrunnessa Govt Girls (BBGGC)</h3>
+        <p>Premier Girls College &bull; All Groups</p>
+      </div>
+    </div>
+    <div class="pc-batches">
+      <span class="pc-pill active">HSC-27</span>
+      <span class="pc-pill">HSC-26</span>
+      <span class="pc-pill">HSC-25</span>
+      <span class="pc-pill">+6 Batches</span>
+    </div>
+  </a>
+
+  <!-- Govt Science College -->
+  <a class="portal-card" href="../govcd/gsc/index.html">
+    <div class="pc-top">
+      <div class="pc-icon" style="background:#ECFDF5;color:#059669;"><i class="fa-solid fa-flask"></i></div>
+      <div class="pc-title">
+        <h3>Govt. Science College (GSC)</h3>
+        <p>Tejgaon, Dhaka &bull; Pure Science Focus (~1,200 Students)</p>
+      </div>
+    </div>
+    <div class="pc-batches">
+      <span class="pc-pill active">HSC-27</span>
+      <span class="pc-pill">HSC-26</span>
+      <span class="pc-pill">HSC-25</span>
+      <span class="pc-pill">+6 Batches</span>
+    </div>
+  </a>
+
+  <!-- Govt Bangla College -->
+  <a class="portal-card" href="../govcd/bc/index.html">
+    <div class="pc-top">
+      <div class="pc-icon" style="background:#FFFBEB;color:#D97706;"><i class="fa-solid fa-book-open"></i></div>
+      <div class="pc-title">
+        <h3>Govt. Bangla College (BC)</h3>
+        <p>Mirpur, Dhaka &bull; Science, Arts & Business</p>
+      </div>
+    </div>
+    <div class="pc-batches">
+      <span class="pc-pill active">HSC-27</span>
+      <span class="pc-pill">HSC-26</span>
+      <span class="pc-pill">HSC-25</span>
+      <span class="pc-pill">+6 Batches</span>
+    </div>
+  </a>
+
+  <!-- Kabi Nazrul College -->
+  <a class="portal-card" href="../govcd/knc/index.html">
+    <div class="pc-top">
+      <div class="pc-icon" style="background:#FEF2F2;color:#DC2626;"><i class="fa-solid fa-feather"></i></div>
+      <div class="pc-title">
+        <h3>Kabi Nazrul Govt. College (KNC)</h3>
+        <p>Laxmibazar, Old Dhaka &bull; All Groups</p>
+      </div>
+    </div>
+    <div class="pc-batches">
+      <span class="pc-pill active">HSC-27</span>
+      <span class="pc-pill">HSC-26</span>
+      <span class="pc-pill">HSC-25</span>
+      <span class="pc-pill">+6 Batches</span>
+    </div>
+  </a>
+
+  <!-- Savar Govt College -->
+  <a class="portal-card" href="../govcd/sgc/index.html">
+    <div class="pc-top">
+      <div class="pc-icon" style="background:#F0FDFA;color:#0D9488;"><i class="fa-solid fa-graduation-cap"></i></div>
+      <div class="pc-title">
+        <h3>Savar Govt. College (SGC)</h3>
+        <p>Savar, Dhaka &bull; Full Profile Integration</p>
+      </div>
+    </div>
+    <div class="pc-batches">
+      <span class="pc-pill active">HSC-27</span>
+      <span class="pc-pill">HSC-26</span>
+      <span class="pc-pill">HSC-25</span>
+      <span class="pc-pill">+6 Batches</span>
+    </div>
+  </a>
+</div>
+
+<footer>
+  &copy; 2026 GOVCD &bull; Government College Student Database System &bull; Unified Format
+</footer>
+
+<script src="assets/js/portal.js"></script>
+<script>
+window.addEventListener('DOMContentLoaded', () => {
+  initAuth();
+  initTheme();
+});
+</script>
+</body>
+</html>
