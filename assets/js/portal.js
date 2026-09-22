@@ -13,6 +13,7 @@ const CONFIG = {
 
 const COLLEGES = [
   { code: 'dc',    short: 'DC',    name: 'Dhaka College',                       icon: 'fa-building-columns' },
+  { code: 'ctg',   short: 'CTG',   name: 'Chittagong College',                  icon: 'fa-graduation-cap' },
   { code: 'bbggc', short: 'BBGGC', name: 'Begum Badrunnessa Govt Girls College', icon: 'fa-female' },
   { code: 'gsc',   short: 'GSC',   name: 'Govt. Science College',               icon: 'fa-flask' },
   { code: 'bc',    short: 'BC',    name: 'Govt. Bangla College',                 icon: 'fa-book-open' },
@@ -21,6 +22,7 @@ const COLLEGES = [
 ];
 
 const ALL_BATCHES = [
+  { key: 'hsc28', label: '28', fullLabel: 'HSC-28', session: '2026-2027' },
   { key: 'hsc27', label: '27', fullLabel: 'HSC-27', session: '2025-2026' },
   { key: 'hsc26', label: '26', fullLabel: 'HSC-26', session: '2024-2025' },
   { key: 'hsc25', label: '25', fullLabel: 'HSC-25', session: '2023-2024' },
@@ -55,6 +57,12 @@ const state = {
     bloodGroup: 'all',
     quota: 'all',
     sscYear: 'all',
+    presentDistrict: 'all',
+    permanentDistrict: 'all',
+    fourthSubject: 'all',
+    electiveSubject: 'all',
+    gpa: 'all',
+    bookmarkedOnly: false,
   }
 };
 
@@ -64,26 +72,42 @@ const $ = id => document.getElementById(id);
 function initAuth() {
   const overlay = $('authOverlay');
   if (!overlay) return;
-  if (sessionStorage.getItem(CONFIG.AUTH_KEY) === 'ok') {
-    overlay.classList.add('unlocked');
-    return;
-  }
-  overlay.classList.remove('unlocked');
   const input = $('authPinInput');
   const btn = $('authSubmitBtn');
   const err = $('authErrMsg');
 
   function checkPin() {
     if (!input) return;
-    if (input.value.trim() === CONFIG.PIN) {
+    const rawVal = input.value || '';
+    // Normalize Bengali digits (০-৯) to standard English digits (0-9)
+    const val = rawVal.replace(/[০-৯]/g, d => '০১২৩৪৫৬৭৮৯'.indexOf(d)).trim();
+
+    if (!val) {
+      if (err) {
+        err.innerHTML = '<i class="fa-solid fa-circle-info" style="margin-right:4px;"></i> Please enter the access PIN.';
+        err.classList.add('show');
+        err.style.display = 'block';
+      }
+      input.classList.add('error');
+      input.focus();
+      setTimeout(() => input.classList.remove('error'), 400);
+      return;
+    }
+
+    if (val === CONFIG.PIN) {
       sessionStorage.setItem(CONFIG.AUTH_KEY, 'ok');
+      localStorage.setItem(CONFIG.AUTH_KEY, 'ok');
       overlay.classList.add('unlocked');
-      if (err) err.style.display = 'none';
+      if (err) {
+        err.classList.remove('show');
+        err.style.display = 'none';
+      }
       showToast('Portal Unlocked Successfully');
     } else {
       input.classList.add('error');
       if (err) {
-        err.textContent = 'Incorrect PIN! Please try again.';
+        err.innerHTML = '<i class="fa-solid fa-circle-exclamation" style="margin-right:4px;"></i> Incorrect PIN! Please try again.';
+        err.classList.add('show');
         err.style.display = 'block';
       }
       setTimeout(() => input.classList.remove('error'), 400);
@@ -92,26 +116,59 @@ function initAuth() {
     }
   }
 
-  if (btn) btn.addEventListener('click', checkPin);
-  if (input) {
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') checkPin(); });
-    setTimeout(() => input.focus(), 150);
+  // Bind events unconditionally so locking and re-unlocking always works
+  if (btn && !btn.dataset.bound) {
+    btn.dataset.bound = 'true';
+    btn.addEventListener('click', checkPin);
+  }
+  if (input && !input.dataset.bound) {
+    input.dataset.bound = 'true';
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        checkPin();
+      }
+    });
+    input.addEventListener('input', () => {
+      if (err) {
+        err.classList.remove('show');
+        err.style.display = 'none';
+      }
+      input.classList.remove('error');
+    });
+  }
+
+  // Check stored auth
+  const isAuth = sessionStorage.getItem(CONFIG.AUTH_KEY) === 'ok' || localStorage.getItem(CONFIG.AUTH_KEY) === 'ok';
+  if (isAuth) {
+    overlay.classList.add('unlocked');
+  } else {
+    overlay.classList.remove('unlocked');
+    if (input) setTimeout(() => input.focus(), 150);
   }
 }
+window.initAuth = initAuth;
 
 function lockPortal() {
   sessionStorage.removeItem(CONFIG.AUTH_KEY);
+  localStorage.removeItem(CONFIG.AUTH_KEY);
   const overlay = $('authOverlay');
   if (overlay) {
     overlay.classList.remove('unlocked');
     const input = $('authPinInput');
+    const err = $('authErrMsg');
+    if (err) {
+      err.classList.remove('show');
+      err.style.display = 'none';
+    }
     if (input) {
       input.value = '';
-      setTimeout(() => input.focus(), 200);
+      setTimeout(() => input.focus(), 150);
     }
   }
   showToast('Portal Locked');
 }
+window.lockPortal = lockPortal;
 
 /* ── THEME TOGGLE ────────────────────────────────────────── */
 function initTheme() {
@@ -244,6 +301,9 @@ async function switchBatch(batch) {
 
   showLoadingState();
   const data = await fetchBatchData(batch.jsonUrl);
+  data.forEach(s => {
+    if (s.ssc_board) s.ssc_board = normalizeBoardName(s.ssc_board, s.ssc_gpa);
+  });
   state.allStudents = data;
   state.filteredStudents = data;
 
@@ -325,13 +385,29 @@ function setupSearchAndFilters() {
     });
   }
 
-  // Keyboard shortcut '/' to search
+  // Keyboard shortcut Ctrl+K / Cmd+K or '/' to search
   document.addEventListener('keydown', e => {
-    if (e.key === '/' && document.activeElement !== sInput && !$('modalBackdrop')?.classList.contains('show') && !$('filterModalBackdrop')?.classList.contains('show')) {
-      e.preventDefault();
-      sInput?.focus();
+    const isSearchKey = ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') ||
+                        (e.key === '/' && document.activeElement !== sInput);
+    if (isSearchKey) {
+      if (!$('modalBackdrop')?.classList.contains('show') && !$('filterModalBackdrop')?.classList.contains('show')) {
+        e.preventDefault();
+        sInput?.focus();
+        sInput?.select();
+      }
     }
   });
+
+  // Bookmarks filter button in toolbar
+  const bmFilterBtn = $('filterBookmarksBtn');
+  if (bmFilterBtn) {
+    bmFilterBtn.addEventListener('click', () => {
+      state.filters.bookmarkedOnly = !state.filters.bookmarkedOnly;
+      bmFilterBtn.classList.toggle('active', state.filters.bookmarkedOnly);
+      state.currentPage = 1;
+      applyFilters();
+    });
+  }
 
   setupFilterModal();
 }
@@ -368,11 +444,16 @@ function setupFilterModal() {
       state.filters.group = $('fModalGroup')?.value || 'all';
       state.filters.section = $('fModalSection')?.value || 'all';
       state.filters.district = $('fModalDistrict')?.value || 'all';
+      state.filters.presentDistrict = $('fModalPresentDistrict')?.value || 'all';
+      state.filters.permanentDistrict = $('fModalPermanentDistrict')?.value || 'all';
       state.filters.board = $('fModalBoard')?.value || 'all';
       state.filters.religion = $('fModalReligion')?.value || 'all';
       state.filters.bloodGroup = $('fModalBloodGroup')?.value || 'all';
       state.filters.quota = $('fModalQuota')?.value || 'all';
       state.filters.sscYear = $('fModalSscYear')?.value || 'all';
+      state.filters.fourthSubject = $('fModalFourthSubject')?.value || 'all';
+      state.filters.electiveSubject = $('fModalElectiveSubject')?.value || 'all';
+      state.filters.gpa = $('fModalGpa')?.value || 'all';
 
       // Sync quick selects
       if ($('groupFilter')) $('groupFilter').value = state.filters.group;
@@ -395,15 +476,23 @@ function updateFilterModalMatchCount() {
   const grp = $('fModalGroup')?.value || state.filters.group;
   const sec = $('fModalSection')?.value || state.filters.section;
   const dist = $('fModalDistrict')?.value || state.filters.district;
+  const presDist = $('fModalPresentDistrict')?.value || state.filters.presentDistrict;
+  const permDist = $('fModalPermanentDistrict')?.value || state.filters.permanentDistrict;
   const brd = $('fModalBoard')?.value || state.filters.board;
   const rel = $('fModalReligion')?.value || state.filters.religion;
   const bg = $('fModalBloodGroup')?.value || state.filters.bloodGroup;
   const qta = $('fModalQuota')?.value || state.filters.quota;
   const yr = $('fModalSscYear')?.value || state.filters.sscYear;
+  const s4th = $('fModalFourthSubject')?.value || state.filters.fourthSubject;
+  const selec = $('fModalElectiveSubject')?.value || state.filters.electiveSubject;
+  const gpa = $('fModalGpa')?.value || state.filters.gpa;
 
   const count = state.allStudents.filter(s => matchStudentFilters(s, {
-    gender: g, group: grp, section: sec, district: dist, board: brd,
-    religion: rel, bloodGroup: bg, quota: qta, sscYear: yr
+    gender: g, group: grp, section: sec, district: dist,
+    presentDistrict: presDist, permanentDistrict: permDist,
+    board: brd, religion: rel, bloodGroup: bg, quota: qta, sscYear: yr,
+    fourthSubject: s4th, electiveSubject: selec, gpa: gpa,
+    bookmarkedOnly: state.filters.bookmarkedOnly
   })).length;
 
   const countEl = $('filterModalMatchCount');
@@ -414,14 +503,20 @@ function resetAllFilters() {
   state.filters = {
     gender: 'all', group: 'all', section: 'all', district: 'all',
     board: 'all', religion: 'all', bloodGroup: 'all', quota: 'all', sscYear: 'all',
+    presentDistrict: 'all', permanentDistrict: 'all', fourthSubject: 'all',
+    electiveSubject: 'all', gpa: 'all', bookmarkedOnly: false,
   };
   ['fModalGender','fModalGroup','fModalSection','fModalDistrict','fModalBoard',
-   'fModalReligion','fModalBloodGroup','fModalQuota','fModalSscYear'].forEach(id => {
+   'fModalReligion','fModalBloodGroup','fModalQuota','fModalSscYear',
+   'fModalPresentDistrict','fModalPermanentDistrict','fModalFourthSubject',
+   'fModalElectiveSubject','fModalGpa'].forEach(id => {
     const el = $(id);
     if (el) el.value = 'all';
   });
   if ($('groupFilter')) $('groupFilter').value = 'all';
   if ($('sectionFilter')) $('sectionFilter').value = 'all';
+  const bmFilterBtn = $('filterBookmarksBtn');
+  if (bmFilterBtn) bmFilterBtn.classList.remove('active');
   state.currentPage = 1;
   applyFilters();
 }
@@ -447,18 +542,31 @@ function populateAdvancedFilterModal(data) {
   const groups = [...new Set(data.map(s => s.group_name).filter(Boolean))].sort();
   const sections = [...new Set(data.map(s => s.section).filter(Boolean))].sort();
   const districts = [...new Set(data.flatMap(s => [s.present_district, s.permanent_district]).filter(Boolean).map(x => x.trim()))].sort();
-  const boards = [...new Set(data.map(s => s.ssc_board).filter(Boolean).map(x => x.trim()))].sort();
+  const presDistricts = [...new Set(data.map(s => s.present_district).filter(Boolean).map(x => x.trim()))].sort();
+  const permDistricts = [...new Set(data.map(s => s.permanent_district).filter(Boolean).map(x => x.trim()))].sort();
+  const boards = [...new Set(data.map(s => normalizeBoardName(s.ssc_board, s.ssc_gpa)).filter(Boolean))].sort();
   const religions = [...new Set(data.map(s => s.religion).filter(Boolean).map(x => x.trim()))].sort();
   const bloodGroups = [...new Set(data.map(s => s.blood_group).filter(Boolean).map(x => x.trim()))].sort();
   const years = [...new Set(data.map(s => s.ssc_year).filter(Boolean).map(x => x.trim()))].sort();
+  const fourthSubs = [...new Set(data.map(s => cleanSubjectName(s.fourth_subject)).filter(x => x && x !== '—' && x !== 'N/A'))].sort();
+  const elecSubs = [...new Set(data.map(s => cleanSubjectName(s.elective_subjects)).filter(x => x && x !== '—' && x !== 'N/A'))].sort();
 
   fillSelect('fModalGroup', groups, 'All Groups');
   fillSelect('fModalSection', sections, 'All Sections');
   fillSelect('fModalDistrict', districts, 'All Districts');
+  fillSelect('fModalPresentDistrict', presDistricts, 'All Present Districts');
+  fillSelect('fModalPermanentDistrict', permDistricts, 'All Permanent Districts');
   fillSelect('fModalBoard', boards, 'All Boards');
   fillSelect('fModalReligion', religions, 'All Religions');
   fillSelect('fModalBloodGroup', bloodGroups, 'All Blood Groups');
   fillSelect('fModalSscYear', years, 'All Passing Years');
+  fillSelect('fModalFourthSubject', fourthSubs, 'All 4th Subjects');
+  fillSelect('fModalElectiveSubject', elecSubs, 'All Elective Subjects');
+
+  const secField = $('fModalSection')?.closest('.f-field');
+  if (secField) {
+    secField.style.display = (state.collegeCode === 'dc') ? 'flex' : 'none';
+  }
 }
 
 function fillSelect(id, items, defaultLabel) {
@@ -469,6 +577,7 @@ function fillSelect(id, items, defaultLabel) {
 }
 
 function matchStudentFilters(s, f) {
+  if (f.bookmarkedOnly && !isBookmarked(s.college_roll || s.admission_roll)) return false;
   if (f.gender !== 'all' && (s.gender || '').toLowerCase() !== f.gender.toLowerCase()) return false;
   if (f.group !== 'all' && s.group_name !== f.group) return false;
   if (f.section !== 'all' && s.section !== f.section) return false;
@@ -478,10 +587,35 @@ function matchStudentFilters(s, f) {
     const target = f.district.toLowerCase();
     if (!p1.includes(target) && !p2.includes(target)) return false;
   }
-  if (f.board !== 'all' && (s.ssc_board || '').toLowerCase() !== f.board.toLowerCase()) return false;
+  if (f.presentDistrict && f.presentDistrict !== 'all') {
+    const p1 = (s.present_district || '').toLowerCase();
+    if (!p1.includes(f.presentDistrict.toLowerCase())) return false;
+  }
+  if (f.permanentDistrict && f.permanentDistrict !== 'all') {
+    const p2 = (s.permanent_district || '').toLowerCase();
+    if (!p2.includes(f.permanentDistrict.toLowerCase())) return false;
+  }
+  if (f.board !== 'all' && normalizeBoardName(s.ssc_board, s.ssc_gpa).toLowerCase() !== normalizeBoardName(f.board).toLowerCase()) return false;
   if (f.religion !== 'all' && (s.religion || '').toLowerCase() !== f.religion.toLowerCase()) return false;
   if (f.bloodGroup !== 'all' && (s.blood_group || '').toLowerCase() !== f.bloodGroup.toLowerCase()) return false;
   if (f.sscYear !== 'all' && String(s.ssc_year || '') !== String(f.sscYear)) return false;
+  if (f.fourthSubject && f.fourthSubject !== 'all') {
+    const s4th = cleanSubjectName(s.fourth_subject || '').toLowerCase();
+    if (!s4th.includes(f.fourthSubject.toLowerCase())) return false;
+  }
+  if (f.electiveSubject && f.electiveSubject !== 'all') {
+    const selec = cleanSubjectName(s.elective_subjects || '').toLowerCase();
+    if (!selec.includes(f.electiveSubject.toLowerCase())) return false;
+  }
+  if (f.gpa && f.gpa !== 'all') {
+    const val = parseFloat(s.ssc_gpa);
+    if (isNaN(val)) return false;
+    if (f.gpa === '5.00' && val < 5.00) return false;
+    if (f.gpa === 'gte_4.8' && val < 4.80) return false;
+    if (f.gpa === 'gte_4.5' && val < 4.50) return false;
+    if (f.gpa === 'gte_4.0' && val < 4.00) return false;
+    if (f.gpa === 'lt_4.0' && val >= 4.00) return false;
+  }
   if (f.quota !== 'all') {
     const q = (s.quota || '').trim();
     if (f.quota === 'has_quota' && (!q || q === '-' || q === '0')) return false;
@@ -524,15 +658,24 @@ function updateActiveFilterChips() {
   if (!bar) return;
 
   const active = [];
+  if (state.filters.bookmarkedOnly) active.push({ key: 'bookmarkedOnly', label: '⭐ Bookmarked Only' });
   if (state.filters.gender !== 'all') active.push({ key: 'gender', label: `Gender: ${state.filters.gender}` });
   if (state.filters.group !== 'all') active.push({ key: 'group', label: `Group: ${state.filters.group}` });
   if (state.filters.section !== 'all') active.push({ key: 'section', label: `Sec: ${state.filters.section}` });
   if (state.filters.district !== 'all') active.push({ key: 'district', label: `Zila: ${state.filters.district}` });
+  if (state.filters.presentDistrict !== 'all') active.push({ key: 'presentDistrict', label: `Present Zila: ${state.filters.presentDistrict}` });
+  if (state.filters.permanentDistrict !== 'all') active.push({ key: 'permanentDistrict', label: `Permanent Zila: ${state.filters.permanentDistrict}` });
   if (state.filters.board !== 'all') active.push({ key: 'board', label: `Board: ${state.filters.board}` });
   if (state.filters.religion !== 'all') active.push({ key: 'religion', label: `Religion: ${state.filters.religion}` });
   if (state.filters.bloodGroup !== 'all') active.push({ key: 'bloodGroup', label: `Blood: ${state.filters.bloodGroup}` });
   if (state.filters.quota !== 'all') active.push({ key: 'quota', label: `Quota: ${state.filters.quota}` });
   if (state.filters.sscYear !== 'all') active.push({ key: 'sscYear', label: `Year: ${state.filters.sscYear}` });
+  if (state.filters.fourthSubject !== 'all') active.push({ key: 'fourthSubject', label: `4th: ${state.filters.fourthSubject}` });
+  if (state.filters.electiveSubject !== 'all') active.push({ key: 'electiveSubject', label: `Elective: ${state.filters.electiveSubject}` });
+  if (state.filters.gpa !== 'all') {
+    const gpaLabels = { '5.00': 'GPA 5.00', 'gte_4.8': 'GPA ≥ 4.80', 'gte_4.5': 'GPA ≥ 4.50', 'gte_4.0': 'GPA ≥ 4.00', 'lt_4.0': 'GPA < 4.00' };
+    active.push({ key: 'gpa', label: gpaLabels[state.filters.gpa] || `GPA: ${state.filters.gpa}` });
+  }
 
   if (badge) {
     if (active.length > 0) {
@@ -565,15 +708,24 @@ function updateActiveFilterChips() {
 }
 
 function removeFilter(key) {
-  state.filters[key] = 'all';
-  const modalEl = {
-    gender: 'fModalGender', group: 'fModalGroup', section: 'fModalSection',
-    district: 'fModalDistrict', board: 'fModalBoard', religion: 'fModalReligion',
-    bloodGroup: 'fModalBloodGroup', quota: 'fModalQuota', sscYear: 'fModalSscYear'
-  }[key];
-  if (modalEl && $(modalEl)) $(modalEl).value = 'all';
-  if (key === 'group' && $('groupFilter')) $('groupFilter').value = 'all';
-  if (key === 'section' && $('sectionFilter')) $('sectionFilter').value = 'all';
+  if (key === 'bookmarkedOnly') {
+    state.filters.bookmarkedOnly = false;
+    const bmFilterBtn = $('filterBookmarksBtn');
+    if (bmFilterBtn) bmFilterBtn.classList.remove('active');
+  } else {
+    state.filters[key] = 'all';
+    const modalEl = {
+      gender: 'fModalGender', group: 'fModalGroup', section: 'fModalSection',
+      district: 'fModalDistrict', presentDistrict: 'fModalPresentDistrict',
+      permanentDistrict: 'fModalPermanentDistrict', board: 'fModalBoard',
+      religion: 'fModalReligion', bloodGroup: 'fModalBloodGroup', quota: 'fModalQuota',
+      sscYear: 'fModalSscYear', fourthSubject: 'fModalFourthSubject',
+      electiveSubject: 'fModalElectiveSubject', gpa: 'fModalGpa'
+    }[key];
+    if (modalEl && $(modalEl)) $(modalEl).value = 'all';
+    if (key === 'group' && $('groupFilter')) $('groupFilter').value = 'all';
+    if (key === 'section' && $('sectionFilter')) $('sectionFilter').value = 'all';
+  }
   state.currentPage = 1;
   applyFilters();
 }
@@ -614,13 +766,254 @@ function setupViewToggle() {
   });
 }
 
+function getGroupFolder(groupName) {
+  const g = (groupName || 'Science').toLowerCase();
+  if (g.includes('bus') || g.includes('com') || g.includes('b.stu')) return 'bstudies';
+  if (g.includes('hum') || g.includes('art')) return 'humanities';
+  return 'science';
+}
+
 function getStudentPhotoPath(s) {
   if (s.local_photo) return s.local_photo;
   if (s.photo_filename && state.currentBatch && state.currentBatch.photoBase) {
-    const gf = (s.group_name || 'Science').toLowerCase().replace(/ /g, '_');
+    const gf = getGroupFolder(s.group_name);
     return state.currentBatch.photoBase + gf + '/' + s.photo_filename;
   }
   return null;
+}
+
+function getStudentLocalPdfUrl(s) {
+  if (s.local_pdf) return s.local_pdf;
+  if (s.pdf_filename && state.currentBatch && state.currentBatch.pdfBase) {
+    const gf = getGroupFolder(s.group_name);
+    return state.currentBatch.pdfBase + gf + '/' + s.pdf_filename;
+  }
+  return null;
+}
+
+function formatRollTag(shortRoll, fallbackIdx) {
+  if (shortRoll !== undefined && shortRoll !== null && String(shortRoll).trim() !== '') {
+    const clean = String(shortRoll).replace(/^0+/, '');
+    return '#' + (clean || '0');
+  }
+  return '#' + fallbackIdx;
+}
+
+function getSectionBadgeInfo(s) {
+  const isDC = (state.collegeCode === 'dc');
+  const grp = (s.group_name || '').toLowerCase();
+  
+  if (grp.includes('hum') || grp.includes('art')) {
+    return { text: 'HUM', cls: 'hum-tag' };
+  }
+  if (grp.includes('bus') || grp.includes('com') || grp.includes('b.stu')) {
+    return { text: 'B.STU', cls: 'bs-tag' };
+  }
+  
+  // Science group:
+  if (isDC) {
+    const sec = (s.section || '').replace(/^(sec|section)\s*/i, '').trim();
+    if (sec && !/science|all|—/i.test(sec)) {
+      return { text: sec, cls: '' }; // e.g. "A", "B", "C"
+    }
+  }
+  return { text: 'SCI', cls: '' };
+}
+
+/* ── CLEAN SUBJECT NORMALIZER (TASK 4) ─────────────────────── */
+function cleanSubjectName(str) {
+  if (!str || str === '—' || str === 'N/A') return '—';
+  const l = str.toLowerCase();
+  if (l.includes('physics')) return 'Physics';
+  if (l.includes('chemistry')) return 'Chemistry';
+  if (l.includes('higher math') || l.includes('উচ্চতর')) return 'Higher Math';
+  if (l.includes('biology') || l.includes('জীববিজ্ঞান')) return 'Biology';
+  if (l.includes('bangla') || l.includes('বাংলা')) return 'Bangla';
+  if (l.includes('english') || l.includes('ইংরেজি')) return 'English';
+  if (l.includes('ict') || l.includes('information and comm')) return 'ICT';
+  if (l.includes('statistics') || l.includes('পরিসংখ্যান')) return 'Statistics';
+  if (l.includes('economics') || l.includes('অর্থনীতি')) return 'Economics';
+  if (l.includes('accounting') || l.includes('হিসাববিজ্ঞান')) return 'Accounting';
+  if (l.includes('finance') || l.includes('ব্যাংকিং')) return 'Finance & Banking';
+  if (l.includes('management') || l.includes('business org') || l.includes('ব্যবস্থাপনা')) return 'Management';
+  if (l.includes('marketing') || l.includes('বিপণন')) return 'Marketing';
+  if (l.includes('civics') || l.includes('পৌরনীতি')) return 'Civics';
+  if (l.includes('sociology') || l.includes('সমাজবিজ্ঞান')) return 'Sociology';
+  if (l.includes('social work') || l.includes('সমাজকর্ম')) return 'Social Work';
+  if (l.includes('logic') || l.includes('যুক্তিবিদ্যা')) return 'Logic';
+  if (l.includes('geography') || l.includes('ভূগোল')) return 'Geography';
+  if (l.includes('psychology') || l.includes('মনোবিজ্ঞান')) return 'Psychology';
+  if (l.includes('islamic history') || l.includes('ইসলামের ইতিহাস')) return 'Islamic History';
+  if (l.includes('islamic studies') || l.includes('ইসলাম শিক্ষা')) return 'Islamic Studies';
+  if (l.includes('agriculture') || l.includes('কৃষি')) return 'Agriculture';
+  if (l.includes('home science') || l.includes('গার্হস্থ্য')) return 'Home Science';
+  return str.replace(/^\d+\s*-\s*/, '').replace(/\b(1st|2nd)\s+paper\b/gi, '').replace(/\s*\/\s*\d+.*$/, '').replace(/mandatory|elective|fourth/gi, '').trim();
+}
+
+function cleanSubjectLabel(txt) {
+  return cleanSubjectName(txt);
+}
+
+/* ── SSC BOARD NORMALIZER ─────────────────────────────────── */
+function normalizeBoardName(name, gpa = '') {
+  if (!name || typeof name !== 'string') return '';
+  const raw = name.trim();
+  const clean = raw.replace(/[^a-zA-Z]/g, '').toLowerCase();
+
+  // Handle column shift anomaly
+  if ((raw === '2025' || raw === '2026') && gpa) {
+    const gClean = String(gpa).toLowerCase();
+    if (gClean.includes('dhaka')) return 'Dhaka';
+    if (gClean.includes('barishal') || gClean.includes('barisal')) return 'Barishal';
+  }
+
+  if (!clean) return '';
+
+  // Jashore / Jessore / Joshor / Jeshore / Jasshore
+  if (['jash', 'jess', 'josh', 'jesh', 'jass'].some(k => clean.includes(k))) return 'Jashore';
+  // Chattogram / Chittagong / CTG
+  if (['chatt', 'chitt', 'chott', 'chitag', 'chaitt', 'chtro', 'chatro', 'ctg', 'collegiate', 'general'].some(k => clean.includes(k))) return 'Chattogram';
+  // Cumilla / Comilla
+  if (['cumil', 'comil', 'camil', 'cumila'].some(k => clean.includes(k))) return 'Cumilla';
+  // Barishal / Barisal
+  if (['barish', 'baris'].some(k => clean.includes(k))) return 'Barishal';
+  // Mymensingh
+  if (['mymen', 'mymin'].some(k => clean.includes(k))) return 'Mymensingh';
+  // Madrasah
+  if (['madra', 'madar'].some(k => clean.includes(k))) return 'Madrasah';
+  // Technical / BTEB
+  if (['bteb', 'betb', 'tech', 'tach', 'tecg', 'tecn'].some(k => clean.includes(k)) || clean === 'tec') return 'BTEB';
+  // Dhaka
+  if (clean.includes('dhak') || clean.includes('dhdk') || clean.includes('dacc') || clean.includes('jurain') || clean.includes('mohammadpur')) return 'Dhaka';
+  // Rajshahi
+  if (clean.includes('rajsh')) return 'Rajshahi';
+  // Dinajpur
+  if (clean.includes('dinaj')) return 'Dinajpur';
+  // Sylhet
+  if (clean.includes('sylh')) return 'Sylhet';
+  // BOU
+  if (clean === 'bou' || clean.includes('openuniversity')) return 'BOU';
+
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+}
+
+/* ── EXTERNAL VERIFICATION & DATE HELPERS (TASK 10) ────────── */
+function convertDobToYmd(dobStr) {
+  if (!dobStr) return '';
+  const months = {
+    'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'may': '05', 'jun': '06',
+    'jul': '07', 'aug': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12'
+  };
+  const parts = dobStr.trim().split(/[-/.\s]+/);
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+    const d = parts[0].padStart(2, '0');
+    let m = parts[1].toLowerCase().slice(0, 3);
+    m = months[m] || parts[1].padStart(2, '0');
+    const y = parts[2];
+    return `${y}-${m}-${d}`;
+  }
+  return dobStr;
+}
+
+function copyDobYmd(dobStr, btn) {
+  const ymd = convertDobToYmd(dobStr);
+  navigator.clipboard.writeText(ymd).then(() => {
+    showToast(`Copied Date of Birth: ${ymd} (YYYY-MM-DD)`);
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i class="fa-solid fa-check"></i> Copied';
+      setTimeout(() => btn.innerHTML = orig, 1500);
+    }
+  });
+}
+window.copyDobYmd = copyDobYmd;
+
+function openBdrisVerification(nidOrBirthReg, dobStr) {
+  const ymd = convertDobToYmd(dobStr) || dobStr || '';
+  if (ymd) {
+    navigator.clipboard.writeText(ymd).then(() => {
+      showToast(`Copied Birth Date: ${ymd}. Opening BDRIS Portal...`);
+    }).catch(() => {
+      showToast('Opening BDRIS Portal...');
+    });
+  } else {
+    showToast('Opening BDRIS Portal...');
+  }
+  window.open('https://everify.bdris.gov.bd/', '_blank');
+}
+window.openBdrisVerification = openBdrisVerification;
+
+function checkSscResult(roll, reg, board, year) {
+  const cleanRoll = String(roll || '').trim();
+  if (cleanRoll && cleanRoll !== '—' && cleanRoll !== 'N/A') {
+    navigator.clipboard.writeText(cleanRoll).then(() => {
+      showToast(`Copied SSC Roll: ${cleanRoll}. Opening SSC Result Portal...`);
+    });
+  } else {
+    showToast(`Opening SSC Result Portal...`);
+  }
+  window.open('https://sscresult.govt.bd/', '_blank');
+}
+window.checkSscResult = checkSscResult;
+
+/* ── BOOKMARKING SYSTEM (TASK 7) ───────────────────────────── */
+function getBookmarks() {
+  try {
+    return JSON.parse(localStorage.getItem('govcd_bookmarks') || '[]');
+  } catch { return []; }
+}
+
+function isBookmarked(roll) {
+  if (!roll) return false;
+  return getBookmarks().includes(String(roll));
+}
+
+function toggleBookmark(roll, btnElement) {
+  if (!roll) return;
+  let bm = getBookmarks();
+  const sRoll = String(roll);
+  let added = false;
+  if (bm.includes(sRoll)) {
+    bm = bm.filter(r => r !== sRoll);
+    showToast('Removed from Bookmarks');
+  } else {
+    bm.push(sRoll);
+    added = true;
+    showToast('Saved to Bookmarks ⭐');
+  }
+  localStorage.setItem('govcd_bookmarks', JSON.stringify(bm));
+  updateBookmarkBadge();
+  document.querySelectorAll(`[data-bm-roll="${sRoll}"]`).forEach(btn => {
+    btn.classList.toggle('active', added);
+    btn.innerHTML = `<i class="fa-${added ? 'solid' : 'regular'} fa-bookmark"></i>`;
+  });
+  if (state.filters.bookmarkedOnly) {
+    applyFilters();
+  }
+}
+window.toggleBookmark = toggleBookmark;
+
+function updateBookmarkBadge() {
+  const badge = $('bookmarkBadge');
+  if (badge) {
+    const count = getBookmarks().length;
+    badge.textContent = count;
+  }
+}
+
+function cleanQuotaLabel(quota) {
+  if (!quota || quota === '—' || quota === 'N/A') return '—';
+  if (/religion|blood group|nationality|date of birth/i.test(quota)) {
+    if (/freedom fighter|মুক্তিযোদ্ধা|ff/i.test(quota)) return 'Freedom Fighter';
+    if (/education|শিক্ষা|eq/i.test(quota)) return 'Education Quota';
+    if (/tribal|উপজাতি|tq/i.test(quota)) return 'Tribal';
+    if (/disability|প্রতিবন্ধী/i.test(quota)) return 'Disability';
+    return '—';
+  }
+  return quota;
 }
 
 function renderActiveView() {
@@ -643,7 +1036,9 @@ function renderActiveView() {
   // 150 student chunking
   const visibleStudents = state.filteredStudents.slice(0, state.currentPage * state.pageSize);
 
-  if (state.currentView === 'photos') {
+  if (state.currentView === 'detailed' || state.currentView === 'cards') {
+    renderDetailedCards(visibleStudents, container);
+  } else if (state.currentView === 'photos') {
     renderPhotosGrid(visibleStudents, container);
   } else if (state.currentView === 'compact') {
     renderCompactGrid(visibleStudents, container);
@@ -660,15 +1055,8 @@ function renderPhotosGrid(students, container) {
     <div class="view-photos-grid">
       ${students.map((s, idx) => {
         const photo = getStudentPhotoPath(s);
-        const groupCode = (s.group_name || '').toLowerCase();
-        let secTagClass = '';
-        if (/humanities|arts/i.test(groupCode)) secTagClass = 'hum-tag';
-        else if (/business/i.test(groupCode)) secTagClass = 'bs-tag';
-        else if (/commerce/i.test(groupCode)) secTagClass = 'com-tag';
-
-        const rollLabel = s.short_roll ? `#${s.short_roll}` : `#${idx + 1}`;
-        const secLabel = s.section ? `Sec ${s.section}` : (s.group_name || 'Science');
-        const admRoll = s.admission_roll || '—';
+        const badgeInfo = getSectionBadgeInfo(s);
+        const rollLabel = formatRollTag(s.short_roll, idx + 1);
 
         return `
           <div class="photo-card" data-idx="${idx}">
@@ -680,11 +1068,132 @@ function renderPhotosGrid(students, container) {
                 <div class="photo-placeholder"><i class="fa-solid fa-user"></i></div>
               `}
               <span class="p-roll-tag">${rollLabel}</span>
-              <span class="p-sec-tag ${secTagClass}">${secLabel}</span>
+              <span class="p-sec-tag ${badgeInfo.cls}">${badgeInfo.text}</span>
             </div>
-            <h4>${esc(s.student_name_en || 'Unknown Student')}</h4>
-            <div class="p-meta">Roll: ${s.college_roll || s.short_roll || '—'}</div>
-            <div class="p-adm"><i class="fa-solid fa-ticket" style="font-size:10px;margin-right:3px;"></i>Adm: ${admRoll}</div>
+            <h4 title="${esc(s.student_name_en || 'Unknown Student')}">${esc(s.student_name_en || 'Unknown Student')}</h4>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+  container.innerHTML = html;
+  bindCardClicks(container, students);
+}
+
+/* ── VIEW 0: DETAILED RICH CARDS (5th Screenshot Reference) ─ */
+function renderDetailedCards(students, container) {
+  const html = `
+    <div class="cards-grid">
+      ${students.map((s, idx) => {
+        const photo = getStudentPhotoPath(s);
+        const localPdf = getStudentLocalPdfUrl(s);
+        const rollNum = s.short_roll ? String(s.short_roll).replace(/^0+/, '') : (idx + 1);
+        
+        const grp = (s.group_name || '').toLowerCase();
+        let gbClass = 'badge-grp';
+        if (grp.includes('hum') || grp.includes('art')) gbClass = 'badge-hum';
+        else if (grp.includes('bus') || grp.includes('com')) gbClass = 'badge-bs';
+
+        const isDC = (state.collegeCode === 'dc');
+        let secBadgeText = '';
+        if (isDC && s.section && s.section !== '—' && !/all|none|science/i.test(s.section)) {
+          secBadgeText = s.section.startsWith('Section') ? s.section : `Section ${s.section}`;
+        }
+        
+        let pracBadgeText = '';
+        if (isDC && s.practical_group && s.practical_group !== '—') {
+          pracBadgeText = s.practical_group.replace(/^(prac:?|practical:?)\s*/i, '').trim();
+        }
+
+        let monthlyIncomeStr = '—';
+        if (s.father_annual_income && !isNaN(s.father_annual_income) && Number(s.father_annual_income) > 0) {
+          const m = Math.round(Number(s.father_annual_income) / 12);
+          monthlyIncomeStr = '৳' + m.toLocaleString();
+        }
+
+        const rawPhone = (s.student_phone && s.student_phone !== '—') ? s.student_phone.replace(/[^0-9]/g, '') : '';
+        const wa = rawPhone.length >= 10 ? (rawPhone.startsWith('88') ? rawPhone : ('88' + rawPhone.replace(/^0/, ''))) : '';
+        const tg = rawPhone.length >= 10 ? (rawPhone.startsWith('88') ? rawPhone : ('88' + rawPhone.replace(/^0/, ''))) : '';
+
+        const districtStr = s.permanent_district || s.present_district || '—';
+        const boardGpaStr = (s.ssc_board || '—') + (s.ssc_gpa ? ` • <strong style="color:var(--success);">${s.ssc_gpa}</strong>` : '');
+        const electiveStr = cleanSubjectLabel(s.elective_subjects);
+        const fourthStr = cleanSubjectLabel(s.fourth_subject);
+
+        return `
+          <div class="s-card" data-idx="${idx}">
+            <div class="card-hdr">
+              ${photo ? `
+                <img class="card-av" src="${photo}" alt="${esc(s.student_name_en)}" loading="lazy"
+                     onerror="this.outerHTML='<div class=card-av style=\\'display:flex;align-items:center;justify-content:center;color:var(--text-faint);\\'><i class=\\'fa-solid fa-user\\'></i></div>'">
+              ` : `
+                <div class="card-av" style="display:flex;align-items:center;justify-content:center;color:var(--text-faint);"><i class="fa-solid fa-user"></i></div>
+              `}
+              <div class="card-hi">
+                <h3 title="${esc(s.student_name_en)}">${esc(s.student_name_en || 'Unknown')}</h3>
+                <div class="card-bn bn-text">${esc(s.student_name_bn || '')}</div>
+                <div class="card-bdgs">
+                  <span class="badge badge-roll">Roll ${rollNum}</span>
+                  <span class="badge ${gbClass}">${esc(s.group_name || 'Science')}</span>
+                  ${secBadgeText ? `<span class="badge badge-sec">${esc(secBadgeText)}</span>` : ''}
+                  ${pracBadgeText ? `<span class="badge badge-prac">${esc(pracBadgeText)}</span>` : ''}
+                  ${s.blood_group && s.blood_group !== '—' ? `<span class="badge badge-bld">${esc(s.blood_group)}</span>` : ''}
+                </div>
+              </div>
+            </div>
+
+            <div class="card-body-grid">
+              <div class="c-item">
+                <span class="c-lbl">Mobile</span>
+                <span class="c-val">${rawPhone ? `<a class="ph-link" href="tel:${rawPhone}" onclick="event.stopPropagation()">${s.student_phone}</a>` : '—'}</span>
+              </div>
+              <div class="c-item">
+                <span class="c-lbl">Date of Birth</span>
+                <span class="c-val">${s.date_of_birth || '—'}</span>
+              </div>
+              <div class="c-item">
+                <span class="c-lbl">Religion</span>
+                <span class="c-val">${s.religion || '—'}</span>
+              </div>
+              <div class="c-item">
+                <span class="c-lbl">Quota</span>
+                <span class="c-val">${cleanQuotaLabel(s.quota)}</span>
+              </div>
+              <div class="c-item">
+                <span class="c-lbl">Father's Occupation</span>
+                <span class="c-val">${s.father_occupation || '—'}</span>
+              </div>
+              <div class="c-item">
+                <span class="c-lbl">Monthly Income</span>
+                <span class="c-val" style="color:var(--success);font-weight:600;">${monthlyIncomeStr}</span>
+              </div>
+              <div class="c-item">
+                <span class="c-lbl">District</span>
+                <span class="c-val">${districtStr}</span>
+              </div>
+              <div class="c-item">
+                <span class="c-lbl">SSC Board &amp; GPA</span>
+                <span class="c-val">${boardGpaStr}</span>
+              </div>
+              <div class="c-item">
+                <span class="c-lbl">Elective Subject</span>
+                <span class="c-val" style="color:var(--primary);font-weight:600;">${electiveStr}</span>
+              </div>
+              <div class="c-item">
+                <span class="c-lbl">4th Subject</span>
+                <span class="c-val" style="color:var(--accent);font-weight:600;">${fourthStr}</span>
+              </div>
+            </div>
+
+            <div class="card-foot">
+              <span class="card-roll-code">${s.college_roll || ''}</span>
+              <div class="card-actions" onclick="event.stopPropagation()">
+                ${rawPhone ? `<a href="tel:${rawPhone}" class="ca-btn" title="Call"><i class="fa-solid fa-phone" style="color:var(--accent);"></i></a>` : ''}
+                ${wa ? `<a href="https://wa.me/${wa}" target="_blank" class="ca-btn" title="WhatsApp"><i class="fa-brands fa-whatsapp" style="color:#25D366;"></i></a>` : ''}
+                ${tg ? `<a href="https://t.me/+${tg}" target="_blank" class="ca-btn" title="Telegram"><i class="fa-brands fa-telegram" style="color:#229ED9;"></i></a>` : ''}
+                ${localPdf ? `<a href="${localPdf}" target="_blank" class="ca-btn" title="Open Downloaded PDF"><i class="fa-solid fa-file-pdf" style="color:#DC2626;"></i></a>` : ''}
+              </div>
+            </div>
           </div>
         `;
       }).join('')}
@@ -713,7 +1222,7 @@ function renderCompactGrid(students, container) {
               <div class="c-sub">
                 <span>#${s.short_roll || (idx+1)}</span> &bull;
                 <span>${s.group_name || ''}</span>
-                ${s.section ? `&bull; <span>Sec ${s.section}</span>` : ''}
+                ${(state.collegeCode === 'dc' && s.section && !/science|all/i.test(s.section)) ? `&bull; <span>Sec ${s.section}</span>` : ''}
               </div>
               <div class="c-adm"><i class="fa-solid fa-ticket" style="font-size:10px;margin-right:3px;"></i>Adm: ${s.admission_roll || '—'}</div>
             </div>
@@ -736,22 +1245,52 @@ function renderTableView(students, container) {
             <tr>
               <th style="width:46px;text-align:center;">#</th>
               <th style="width:52px;text-align:center;">Photo</th>
-              <th>Student Name</th>
+              <th>Student Name (EN)</th>
+              <th>Name (BN)</th>
               <th>College Roll</th>
               <th>Admission Roll</th>
               <th>Group</th>
               <th>Section</th>
+              <th>Prac</th>
+              <th>Blood</th>
+              <th>Gender</th>
+              <th>DOB</th>
+              <th>Religion</th>
+              <th>Quota</th>
               <th>Phone</th>
-              <th>Father's Name</th>
+              <th>Email</th>
+              <th>Father Name</th>
+              <th>Father Phone</th>
+              <th>Occupation</th>
+              <th>Monthly Income</th>
+              <th>Mother Name</th>
+              <th>Present Address</th>
+              <th>Present District</th>
+              <th>Permanent Address</th>
+              <th>Permanent District</th>
+              <th>Local Guardian</th>
+              <th>SSC Board</th>
               <th>SSC GPA</th>
+              <th>SSC Year</th>
+              <th>Elective</th>
+              <th>4th Subject</th>
+              <th>Payment Date</th>
+              <th>Transaction No</th>
+              <th>Doc</th>
             </tr>
           </thead>
           <tbody>
             ${students.map((s, idx) => {
               const photo = getStudentPhotoPath(s);
+              const localPdf = getStudentLocalPdfUrl(s);
+              const rollNum = s.short_roll ? String(s.short_roll).replace(/^0+/, '') : (idx + 1);
+              let inc = '—';
+              if (s.father_annual_income && !isNaN(s.father_annual_income) && Number(s.father_annual_income) > 0) {
+                inc = '৳' + Math.round(Number(s.father_annual_income) / 12).toLocaleString();
+              }
               return `
                 <tr data-idx="${idx}">
-                  <td style="text-align:center;font-weight:700;color:var(--text-muted);">${s.short_roll || (idx+1)}</td>
+                  <td style="text-align:center;font-weight:700;color:var(--text-muted);">${rollNum}</td>
                   <td style="text-align:center;">
                     ${photo ? `
                       <img class="tbl-thumb" src="${photo}" alt="" loading="lazy" onerror="this.style.display='none'">
@@ -760,13 +1299,39 @@ function renderTableView(students, container) {
                     `}
                   </td>
                   <td><strong>${esc(s.student_name_en || 'Unknown')}</strong></td>
+                  <td class="bn-text">${esc(s.student_name_bn || '—')}</td>
                   <td style="font-family:monospace;font-weight:600;color:var(--accent);">${s.college_roll || '—'}</td>
                   <td style="font-family:monospace;font-weight:700;color:var(--primary);">${s.admission_roll || '—'}</td>
                   <td><span class="badge badge-grp">${s.group_name || '—'}</span></td>
-                  <td>${s.section ? `<span class="badge badge-sec">Sec ${s.section}</span>` : '—'}</td>
+                  <td>${(state.collegeCode === 'dc' && s.section && !/science/i.test(s.section)) ? `<span class="badge badge-sec">${s.section}</span>` : '—'}</td>
+                  <td>${(state.collegeCode === 'dc' && s.practical_group) ? s.practical_group : '—'}</td>
+                  <td><strong>${s.blood_group || '—'}</strong></td>
+                  <td>${s.gender || '—'}</td>
+                  <td>${s.date_of_birth || '—'}</td>
+                  <td>${s.religion || '—'}</td>
+                  <td>${cleanQuotaLabel(s.quota)}</td>
                   <td style="font-family:monospace;">${s.student_phone || '—'}</td>
+                  <td>${s.student_email || '—'}</td>
                   <td>${esc(s.father_name_en || '—')}</td>
+                  <td style="font-family:monospace;">${s.father_phone || '—'}</td>
+                  <td>${s.father_occupation || '—'}</td>
+                  <td style="color:var(--success);font-weight:600;">${inc}</td>
+                  <td>${esc(s.mother_name_en || '—')}</td>
+                  <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;" title="${esc(s.present_address)}">${esc(s.present_address || '—')}</td>
+                  <td>${s.present_district || '—'}</td>
+                  <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;" title="${esc(s.permanent_address)}">${esc(s.permanent_address || '—')}</td>
+                  <td>${s.permanent_district || '—'}</td>
+                  <td>${esc(s.local_guardian || '—')}</td>
+                  <td>${s.ssc_board || '—'}</td>
                   <td><strong style="color:var(--success);">${s.ssc_gpa || '—'}</strong></td>
+                  <td>${s.ssc_year || '—'}</td>
+                  <td>${cleanSubjectLabel(s.elective_subjects)}</td>
+                  <td>${cleanSubjectLabel(s.fourth_subject)}</td>
+                  <td>${s.payment_date || '—'}</td>
+                  <td style="font-family:monospace;">${s.transaction_no || '—'}</td>
+                  <td onclick="event.stopPropagation()">
+                    ${localPdf ? `<a href="${localPdf}" target="_blank" style="color:var(--danger);font-size:14px;" title="Open Downloaded PDF"><i class="fa-solid fa-file-pdf"></i></a>` : '—'}
+                  </td>
                 </tr>
               `;
             }).join('')}
@@ -921,27 +1486,34 @@ function openStudentModal(s) {
     infoItem('College Roll', s.college_roll, true),
     infoItem('Admission Roll', s.admission_roll, true),
     infoItem('Short Roll', s.short_roll, true),
-    infoItem('Date of Birth', s.date_of_birth),
+    infoItem('Date of Birth', s.date_of_birth, false, s),
     infoItem('Gender', s.gender),
     infoItem('Blood Group', s.blood_group),
     infoItem('Religion', s.religion),
     infoItem('Nationality', s.nationality),
-    infoItem('Student Phone', s.student_phone, true),
+    infoItem('Student Phone', s.student_phone, true, s),
     infoItem('Student Email', s.student_email),
-    infoItem('Birth Reg / NID', s.nid_birth_reg, true),
+    infoItem('Birth Reg / NID', s.nid_birth_reg, true, s),
   ].filter(Boolean);
 
   // Section 2: Family Information
+  let monthlyIncomeVal = '';
+  if (s.father_annual_income && !isNaN(s.father_annual_income) && Number(s.father_annual_income) > 0) {
+    const m = Math.round(Number(s.father_annual_income) / 12);
+    monthlyIncomeVal = `৳ ${m.toLocaleString()}/=`;
+  }
+
   const familyItems = [
     infoItem("Father's Name (EN)", s.father_name_en),
     infoItem("Father's Name (BN)", s.father_name_bn),
-    infoItem("Father's Phone", s.father_phone, true),
+    infoItem("Father's Phone", s.father_phone, true, s),
     infoItem("Father's NID", s.father_nid, true),
     infoItem("Father's Occupation", s.father_occupation),
+    infoItem("Monthly Income", monthlyIncomeVal),
     infoItem("Annual Income", s.father_annual_income ? `৳ ${Number(s.father_annual_income).toLocaleString()}/=` : ''),
     infoItem("Mother's Name (EN)", s.mother_name_en),
     infoItem("Mother's Name (BN)", s.mother_name_bn),
-    infoItem("Mother's Phone", s.mother_phone, true),
+    infoItem("Mother's Phone", s.mother_phone, true, s),
     infoItem("Mother's NID", s.mother_nid, true),
   ].filter(Boolean);
 
@@ -961,8 +1533,8 @@ function openStudentModal(s) {
     infoItem('SSC GPA', s.ssc_gpa),
     infoItem('SSC Board', s.ssc_board),
     infoItem('Passing Year', s.ssc_year),
-    infoItem('4th Subject', s.fourth_subject),
-    infoItem('Elective Subjects', s.elective_subjects),
+    infoItem('4th Subject', cleanSubjectLabel(s.fourth_subject)),
+    infoItem('Elective Subjects', cleanSubjectLabel(s.elective_subjects)),
   ].filter(Boolean);
 
   // Section 5: Payment
@@ -976,23 +1548,53 @@ function openStudentModal(s) {
 
   // Section 6: Enrolled Subjects
   let subjectsHtml = '';
+  const subjList = [];
   if (s.all_subjects) {
-    const parts = s.all_subjects.split(';').map(p => p.trim()).filter(Boolean);
-    if (parts.length) {
-      const pills = parts.map(p => {
-        let cls = 'sbadge';
-        if (p.includes('mandatory')) cls += ' mandatory';
-        else if (p.includes('elective')) cls += ' elective';
-        else if (p.includes('fourth')) cls += ' fourth';
-        return `<span class="${cls}">${esc(p.replace(/mandatory|elective|fourth/gi, '').trim())}</span>`;
-      }).join('');
-      subjectsHtml = `
-        <div class="info-sec">
-          <div class="info-sec-hdr"><i class="fa-solid fa-book-bookmark"></i> Enrolled Subjects</div>
-          <div class="subjects-wrap">${pills}</div>
-        </div>
-      `;
+    s.all_subjects.split(';').map(p => p.trim()).filter(Boolean).forEach(p => {
+      let typeLabel = 'Compulsory';
+      let cls = 'sbadge mandatory';
+      if (/fourth|4th/i.test(p)) {
+        typeLabel = '4th Subject';
+        cls = 'sbadge fourth';
+      } else if (/elective/i.test(p)) {
+        typeLabel = 'Elective';
+        cls = 'sbadge elective';
+      }
+      const cName = cleanSubjectName(p);
+      if (cName && cName !== '—' && !subjList.some(item => item.name === cName)) {
+        subjList.push({ name: cName, type: typeLabel, cls });
+      }
+    });
+  }
+  if (!subjList.length && (s.elective_subjects || s.fourth_subject)) {
+    if (/science/i.test(s.group_name || 'Science')) {
+      subjList.push({ name: 'Bangla', type: 'Compulsory', cls: 'sbadge mandatory' });
+      subjList.push({ name: 'English', type: 'Compulsory', cls: 'sbadge mandatory' });
+      subjList.push({ name: 'ICT', type: 'Compulsory', cls: 'sbadge mandatory' });
+      subjList.push({ name: 'Physics', type: 'Compulsory', cls: 'sbadge mandatory' });
+      subjList.push({ name: 'Chemistry', type: 'Compulsory', cls: 'sbadge mandatory' });
     }
+    if (s.elective_subjects) {
+      const el = cleanSubjectName(s.elective_subjects);
+      if (el && el !== '—') subjList.push({ name: el, type: 'Elective', cls: 'sbadge elective' });
+    }
+    if (s.fourth_subject) {
+      const f4 = cleanSubjectName(s.fourth_subject);
+      if (f4 && f4 !== '—') subjList.push({ name: f4, type: '4th Subject', cls: 'sbadge fourth' });
+    }
+  }
+  if (subjList.length) {
+    const pills = subjList.map(item => `
+      <span class="${item.cls}">
+        ${esc(item.name)} <span class="sb-type">(${item.type})</span>
+      </span>
+    `).join('');
+    subjectsHtml = `
+      <div class="info-sec">
+        <div class="info-sec-hdr"><i class="fa-solid fa-book-bookmark"></i> Enrolled Subjects</div>
+        <div class="subjects-wrap">${pills}</div>
+      </div>
+    `;
   }
 
   // Section 7: Official Documents
@@ -1007,30 +1609,43 @@ function openStudentModal(s) {
     docsHtml += `<a href="${s.receipt_slip_url}" target="_blank" class="doc-btn receipt"><i class="fa-solid fa-receipt"></i> Admission Fee Receipt Slip</a>`;
   }
 
+  const localPdfUrl = getStudentLocalPdfUrl(s);
+  const isDC = (state.collegeCode === 'dc');
+  const cleanSec = (isDC && s.section && s.section !== '—' && !/science|all/i.test(s.section)) ? s.section.replace(/^(sec|section)\s*/i, '').trim() : '';
+  const cleanPrac = (isDC && s.practical_group && s.practical_group !== '—') ? s.practical_group.replace(/^(prac:?|practical:?)\s*/i, '').trim() : '';
+
   card.innerHTML = `
     <!-- Top Hero -->
     <div class="dos-hero">
       <div class="dos-hero-actions">
+        ${localPdfUrl ? `
+          <button class="dos-act-btn pdf-btn" id="modalPdfBtn" title="Open Downloaded Application PDF">
+            <i class="fa-solid fa-file-pdf"></i>
+          </button>
+        ` : ''}
+        <button class="dos-act-btn pin-btn" id="modalPinBtn" title="Pin / Scroll Header with Page">
+          <i class="fa-solid fa-thumbtack"></i>
+        </button>
+        <button class="dos-act-btn bm-btn ${isBookmarked(s.college_roll || s.admission_roll) ? 'active' : ''}" id="modalBmBtn" title="Bookmark Student" data-bm-roll="${s.college_roll || s.admission_roll}">
+          <i class="fa-${isBookmarked(s.college_roll || s.admission_roll) ? 'solid' : 'regular'} fa-bookmark"></i>
+        </button>
         <button class="dos-act-btn" id="modalFullPageBtn" title="Toggle Full Page"><i class="fa-solid fa-expand"></i></button>
         <button class="dos-act-btn close-btn" id="modalCloseBtn" title="Close"><i class="fa-solid fa-xmark"></i></button>
       </div>
       ${photo ? `
         <img class="dos-avatar" src="${photo}" alt="${esc(s.student_name_en)}" onclick="window.open(this.src, '_blank')" title="Click to view original full photo">
       ` : `
-        <div class="dos-avatar" style="display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:42px;"><i class="fa-solid fa-user"></i></div>
+        <div class="dos-avatar" style="display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:36px;"><i class="fa-solid fa-user"></i></div>
       `}
       <div class="dos-info">
         <h2>${esc(s.student_name_en || 'N/A')}</h2>
         <div class="dos-bn bn-text">${esc(s.student_name_bn || '')}</div>
         <div class="dos-badges">
-          <span class="dos-badge adm-badge"><i class="fa-solid fa-ticket" style="margin-right:4px;"></i>Admission Roll: <b>${admRoll}</b></span>
-          <span class="dos-badge">Roll: <b>${s.college_roll || s.short_roll || '—'}</b></span>
           <span class="dos-badge">${s.group_name || 'Science'}</span>
-          ${s.section ? `<span class="dos-badge">Section ${s.section}</span>` : ''}
-          ${s.practical_group ? `<span class="dos-badge">Prac: ${s.practical_group}</span>` : ''}
-          ${s.blood_group ? `<span class="dos-badge"><i class="fa-solid fa-droplet" style="color:#F87171;margin-right:3px;"></i>${s.blood_group}</span>` : ''}
+          ${cleanSec ? `<span class="dos-badge">${cleanSec}</span>` : ''}
+          ${cleanPrac ? `<span class="dos-badge">${cleanPrac}</span>` : ''}
+          ${s.blood_group && s.blood_group !== '—' ? `<span class="dos-badge bld-badge"><i class="fa-solid fa-droplet" style="color:#EF4444;margin-right:3px;"></i>${s.blood_group}</span>` : ''}
         </div>
-        ${commHtml}
       </div>
     </div>
 
@@ -1058,6 +1673,15 @@ function openStudentModal(s) {
         <div class="info-sec">
           <div class="info-sec-hdr"><i class="fa-solid fa-graduation-cap"></i> Academic (SSC) Information</div>
           <div class="info-grid">${academicItems.join('')}</div>
+          <div class="ssc-verify-box">
+            <button class="btn-ssc-verify" onclick="checkSscResult('${s.ssc_roll || ''}', '${s.ssc_reg || ''}', '${s.ssc_board || ''}', '${s.ssc_year || ''}')" title="Copy SSC Roll & Open sscresult.govt.bd">
+              <i class="fa-solid fa-graduation-cap"></i> SSC Result
+            </button>
+            ${s.ssc_reg ? `
+            <button class="btn-copy-reg" onclick="copyText('${s.ssc_reg}', this)" title="Copy SSC Registration Number">
+              <i class="fa-regular fa-copy"></i> Copy Reg
+            </button>` : ''}
+          </div>
         </div>` : ''}
 
       ${subjectsHtml}
@@ -1078,25 +1702,79 @@ function openStudentModal(s) {
 
   $('modalCloseBtn')?.addEventListener('click', closeModal);
   $('modalFullPageBtn')?.addEventListener('click', toggleFullPage);
+  $('modalPdfBtn')?.addEventListener('click', () => {
+    if (localPdfUrl) window.open(localPdfUrl, '_blank');
+  });
+  $('modalPinBtn')?.addEventListener('click', () => {
+    card.classList.toggle('scroll-header');
+    const isScroll = card.classList.contains('scroll-header');
+    const btn = $('modalPinBtn');
+    if (btn) {
+      btn.innerHTML = isScroll ? '<i class="fa-solid fa-arrow-down-up-lock"></i>' : '<i class="fa-solid fa-thumbtack"></i>';
+      btn.classList.toggle('active', isScroll);
+    }
+  });
+  $('modalBmBtn')?.addEventListener('click', () => {
+    toggleBookmark(s.college_roll || s.admission_roll, $('modalBmBtn'));
+  });
 
   bd.classList.add('show');
   card.scrollTop = 0;
 }
 
-function infoItem(label, val, allowCopy) {
+function infoItem(label, val, allowCopy, studentContext) {
   if (val === undefined || val === null) return '';
   const cleanVal = String(val).trim();
   if (!cleanVal || cleanVal === 'N/A' || cleanVal === '—' || cleanVal === '0') return '';
 
-  const copyBtn = allowCopy ? `
-    <button class="copy-btn" onclick="copyText('${cleanVal}', this)" title="Copy ${label}">
-      <i class="fa-regular fa-copy"></i>
-    </button>
-  ` : '';
+  const isPhone = /phone|mobile/i.test(label);
+  const isBirthReg = /^birth reg/i.test(label);
+  const isDob = /date of birth|dob/i.test(label);
+
+  let actionsHtml = '';
+  let valueContent = esc(cleanVal);
+
+  if (isPhone) {
+    const rawDigits = cleanVal.replace(/[^0-9]/g, '');
+    if (rawDigits.length >= 10) {
+      const intl = rawDigits.startsWith('88') ? rawDigits : ('88' + rawDigits.replace(/^0/, ''));
+      valueContent = `<a href="tel:${rawDigits}" class="phone-link" title="Click to call ${cleanVal}">${esc(cleanVal)}</a>`;
+      actionsHtml = `
+        <button class="action-mini-btn copy" onclick="copyText('${cleanVal}', this)" title="Copy Phone Number">
+          <i class="fa-regular fa-copy"></i>
+        </button>
+        <a href="https://wa.me/${intl}" target="_blank" class="action-mini-btn whatsapp" title="Chat on WhatsApp">
+          <i class="fa-brands fa-whatsapp"></i>
+        </a>
+        <a href="https://t.me/+${intl}" target="_blank" class="action-mini-btn telegram" title="Chat on Telegram">
+          <i class="fa-brands fa-telegram"></i>
+        </a>
+      `;
+    } else if (allowCopy) {
+      actionsHtml = `<button class="action-mini-btn copy" onclick="copyText('${cleanVal}', this)" title="Copy ${label}"><i class="fa-regular fa-copy"></i></button>`;
+    }
+  } else if (isBirthReg) {
+    const dob = studentContext?.date_of_birth || '';
+    actionsHtml = `
+      <button class="action-mini-btn copy" onclick="copyText('${cleanVal}', this)" title="Copy ${label}">
+        <i class="fa-regular fa-copy"></i>
+      </button>
+      <button class="btn-bdris" onclick="openBdrisVerification('${cleanVal}', '${dob}')" title="Verify Birth Registration on BDRIS (Copies Date of Birth)">
+        <i class="fa-solid fa-shield-halved"></i> BDRIS
+      </button>
+    `;
+  } else if (allowCopy) {
+    actionsHtml = `
+      <button class="action-mini-btn copy" onclick="copyText('${cleanVal}', this)" title="Copy ${label}">
+        <i class="fa-regular fa-copy"></i>
+      </button>
+    `;
+  }
+
   return `
     <div class="ii">
       <div class="il">${label}</div>
-      <div class="iv">${esc(cleanVal)} ${copyBtn}</div>
+      <div class="iv">${valueContent} ${actionsHtml}</div>
     </div>
   `;
 }
@@ -1132,8 +1810,12 @@ function copyText(text, btn) {
 window.copyText = copyText;
 
 function showToast(msg) {
-  const t = $('toast');
-  if (!t) return;
+  let t = $('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    document.body.appendChild(t);
+  }
   t.innerHTML = `<i class="fa-solid fa-circle-check" style="color:var(--success);margin-right:6px;"></i> ${msg}`;
   t.classList.add('show');
   clearTimeout(t._t);
@@ -1145,6 +1827,31 @@ function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+/* ── SCROLL TO TOP FLOATING ACTION BUTTON ────────────────── */
+function initScrollTopButton() {
+  let fab = $('scrollTopFab');
+  if (!fab) {
+    fab = document.createElement('button');
+    fab.id = 'scrollTopFab';
+    fab.className = 'scroll-top-fab';
+    fab.setAttribute('title', 'Scroll to Top (উপরে যান)');
+    fab.innerHTML = '<i class="fa-solid fa-arrow-up"></i>';
+    document.body.appendChild(fab);
+  }
+
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > 280) {
+      fab.classList.add('visible');
+    } else {
+      fab.classList.remove('visible');
+    }
+  }, { passive: true });
+
+  fab.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
 /* ── PUBLIC INIT FUNCTION ────────────────────────────────── */
 window.initPortal = async function(opts) {
   state.collegeCode = opts.collegeCode || 'dc';
@@ -1153,7 +1860,20 @@ window.initPortal = async function(opts) {
 
   initAuth();
   initTheme();
-  buildSwitchers(state.collegeCode, opts.batches[0]?.key || 'hsc27');
+  initScrollTopButton();
+  updateBookmarkBadge();
+  
+  // Intelligently select default batch:
+  // 1. Honor URL query parameter ?batch=hsc28 or ?batch=28 if provided
+  // 2. Otherwise use opts.defaultBatchKey if provided
+  // 3. Otherwise default to 'hsc28' (newest batch across all colleges)
+  const urlParams = new URLSearchParams(window.location.search);
+  const paramBatch = urlParams.get('batch');
+  const targetKey = paramBatch 
+    ? (paramBatch.startsWith('hsc') ? paramBatch : 'hsc' + paramBatch)
+    : (opts.defaultBatchKey || 'hsc28');
+  let initialBatch = state.batches.find(b => b.key === targetKey) || state.batches[0];
+  buildSwitchers(state.collegeCode, initialBatch ? initialBatch.key : 'hsc28');
   setupSearchAndFilters();
   setupViewToggle();
   setupModalEvents();
@@ -1162,7 +1882,20 @@ window.initPortal = async function(opts) {
   const lockBtn = $('lockPortalBtn');
   if (lockBtn) lockBtn.addEventListener('click', lockPortal);
 
-  if (opts.batches && opts.batches.length > 0) {
-    await switchBatch(opts.batches[0]);
+  if (initialBatch) {
+    await switchBatch(initialBatch);
+    // If the selected initial batch has 0 students, auto-switch to first batch with real data
+    if (state.allStudents.length === 0 && state.batches.length > 1) {
+      for (const b of state.batches) {
+        if (b.key !== initialBatch.key) {
+          const testData = await fetchBatchData(b.jsonUrl);
+          if (testData && testData.length > 0) {
+            await switchBatch(b);
+            break;
+          }
+        }
+      }
+    }
   }
 };
+

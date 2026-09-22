@@ -4,12 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GOVCD | Government College Student Database System</title>
-  <link rel="icon" type="image/svg+xml" href="assets/images/logo.svg">
+  <link rel="icon" type="image/svg+xml" href="assets/images/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/style.css?v=20260921_8">
   <style>
     .landing-hero {
       text-align: center;
@@ -91,14 +91,66 @@
       padding-top: 10px;
       border-top: 1px solid var(--border);
     }
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none !important;
+      color: inherit !important;
+    }
+    .nav-logo {
+      width: 36px;
+      height: 36px;
+      object-fit: contain;
+      border-radius: 8px;
+      flex-shrink: 0;
+    }
+    .auth-logo {
+      width: 54px;
+      height: 54px;
+      object-fit: contain;
+      border-radius: 12px;
+      margin-bottom: 8px;
+    }
+    .nav-brand:visited {
+      color: inherit !important;
+      text-decoration: none !important;
+    }
+    .nav-brand-text h1 {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text) !important;
+      letter-spacing: .5px;
+      line-height: 1.1;
+      text-decoration: none !important;
+      margin: 0;
+    }
+    .nav-brand-text p {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-muted) !important;
+      letter-spacing: .5px;
+      text-decoration: none !important;
+      margin: 0;
+    }
     .pc-pill {
       font-size: 10.5px;
       font-weight: 700;
-      padding: 2px 8px;
+      padding: 3px 9px;
       border-radius: 12px;
       background: var(--surface-alt);
       color: var(--text-muted);
       border: 1px solid var(--border);
+      text-decoration: none;
+      transition: all .15s ease;
+      display: inline-block;
+      cursor: pointer;
+    }
+    .pc-pill:hover {
+      background: var(--accent);
+      color: #FFFFFF;
+      border-color: var(--accent);
+      transform: translateY(-1px);
     }
     .pc-pill.active {
       background: var(--accent);
@@ -113,7 +165,7 @@
 <div id="authOverlay">
   <div class="auth-card">
     <div class="auth-top">
-      <img src="assets/images/logo.svg" alt="GOVCD Logo" class="auth-logo">
+      <img src="assets/images/favicon.svg?v=20260921_8" alt="GOVCD Logo" class="auth-logo">
       <div class="auth-title">GOVCD CENTRAL PORTAL</div>
       <div class="auth-sub">DHAKA BOARD HSC STUDENT ARCHIVE &bull; ACCESS PROTECTED</div>
     </div>
@@ -132,7 +184,7 @@
   <div class="nav-container">
     <div class="nav-brand-group">
       <a class="nav-brand" href="index.html">
-        <img src="assets/images/logo.svg" alt="GOVCD Logo" class="nav-logo">
+        <img src="assets/images/favicon.svg?v=20260921_8" alt="GOVCD Logo" class="nav-logo">
         <div class="nav-brand-text">
           <h1>GOVCD</h1>
           <p>GOVERNMENT COLLEGE DATABASE SYSTEM</p>
@@ -141,6 +193,9 @@
     </div>
 
     <div class="nav-actions">
+      <button class="icon-btn lock-btn" id="lockPortalBtn" title="Lock System">
+        <i class="fa-solid fa-lock"></i>
+      </button>
       <button class="icon-btn" id="themeToggleBtn" title="Toggle Theme">
         <i class="fa-solid fa-sun"></i>
       </button>
@@ -150,123 +205,138 @@
 
 <div class="landing-hero">
   <h1>Unified Government College Database</h1>
-  <p>Comprehensive student admission archive for 6 leading government colleges under Dhaka Education Board. Browse student dossiers, admission rolls, academic records, and original receipts across batches HSC-19 to HSC-27.</p>
+  <p>Comprehensive student admission archive for 7 leading government colleges across Dhaka &amp; Chittagong Education Boards. Browse student dossiers, admission rolls, academic records, and original receipts across batches HSC-19 to HSC-28.</p>
 </div>
 
 <div class="portal-grid">
   <!-- Dhaka College -->
-  <a class="portal-card" href="../govcd/dc/index.html">
-    <div class="pc-top">
+  <div class="portal-card" onclick="if(!event.target.closest('a')) window.location.href='../govcd/dc/index.html'">
+    <a class="pc-top" href="../govcd/dc/index.html" style="text-decoration:none;color:inherit;">
       <div class="pc-icon"><i class="fa-solid fa-building-columns"></i></div>
       <div class="pc-title">
         <h3>Dhaka College (DC)</h3>
         <p>Science, Humanities & Business Studies &bull; Est. 1841</p>
       </div>
-    </div>
+    </a>
     <div class="pc-batches">
-      <span class="pc-pill active">HSC-27</span>
-      <span class="pc-pill">HSC-26</span>
-      <span class="pc-pill">HSC-25</span>
-      <span class="pc-pill">HSC-24</span>
-      <span class="pc-pill">HSC-23...19</span>
+      <a class="pc-pill active" href="../govcd/dc/index.html?batch=hsc28">HSC-28</a>
+      <a class="pc-pill" href="../govcd/dc/index.html?batch=hsc27">HSC-27</a>
+      <a class="pc-pill" href="../govcd/dc/index.html?batch=hsc26">HSC-26</a>
+      <a class="pc-pill" href="../govcd/dc/index.html">+7 Batches</a>
     </div>
-  </a>
+  </div>
 
   <!-- Badrunnessa -->
-  <a class="portal-card" href="../govcd/bbggc/index.html">
-    <div class="pc-top">
+  <div class="portal-card" onclick="if(!event.target.closest('a')) window.location.href='../govcd/bbggc/index.html'">
+    <a class="pc-top" href="../govcd/bbggc/index.html" style="text-decoration:none;color:inherit;">
       <div class="pc-icon" style="background:#FDF2F8;color:#DB2777;"><i class="fa-solid fa-female"></i></div>
       <div class="pc-title">
         <h3>Begum Badrunnessa Govt Girls (BBGGC)</h3>
         <p>Premier Girls College &bull; All Groups</p>
       </div>
-    </div>
+    </a>
     <div class="pc-batches">
-      <span class="pc-pill active">HSC-27</span>
-      <span class="pc-pill">HSC-26</span>
-      <span class="pc-pill">HSC-25</span>
-      <span class="pc-pill">+6 Batches</span>
+      <a class="pc-pill active" href="../govcd/bbggc/index.html?batch=hsc28">HSC-28</a>
+      <a class="pc-pill" href="../govcd/bbggc/index.html?batch=hsc27">HSC-27</a>
+      <a class="pc-pill" href="../govcd/bbggc/index.html?batch=hsc26">HSC-26</a>
     </div>
-  </a>
+  </div>
 
   <!-- Govt Science College -->
-  <a class="portal-card" href="../govcd/gsc/index.html">
-    <div class="pc-top">
+  <div class="portal-card" onclick="if(!event.target.closest('a')) window.location.href='../govcd/gsc/index.html'">
+    <a class="pc-top" href="../govcd/gsc/index.html" style="text-decoration:none;color:inherit;">
       <div class="pc-icon" style="background:#ECFDF5;color:#059669;"><i class="fa-solid fa-flask"></i></div>
       <div class="pc-title">
         <h3>Govt. Science College (GSC)</h3>
         <p>Tejgaon, Dhaka &bull; Pure Science Focus (~1,200 Students)</p>
       </div>
-    </div>
+    </a>
     <div class="pc-batches">
-      <span class="pc-pill active">HSC-27</span>
-      <span class="pc-pill">HSC-26</span>
-      <span class="pc-pill">HSC-25</span>
-      <span class="pc-pill">+6 Batches</span>
+      <a class="pc-pill active" href="../govcd/gsc/index.html?batch=hsc28">HSC-28</a>
+      <a class="pc-pill" href="../govcd/gsc/index.html?batch=hsc27">HSC-27</a>
+      <a class="pc-pill" href="../govcd/gsc/index.html?batch=hsc26">HSC-26</a>
+      <a class="pc-pill" href="../govcd/gsc/index.html">+2 Batches</a>
     </div>
-  </a>
+  </div>
 
   <!-- Govt Bangla College -->
-  <a class="portal-card" href="../govcd/bc/index.html">
-    <div class="pc-top">
+  <div class="portal-card" onclick="if(!event.target.closest('a')) window.location.href='../govcd/bc/index.html'">
+    <a class="pc-top" href="../govcd/bc/index.html" style="text-decoration:none;color:inherit;">
       <div class="pc-icon" style="background:#FFFBEB;color:#D97706;"><i class="fa-solid fa-book-open"></i></div>
       <div class="pc-title">
         <h3>Govt. Bangla College (BC)</h3>
         <p>Mirpur, Dhaka &bull; Science, Arts & Business</p>
       </div>
-    </div>
+    </a>
     <div class="pc-batches">
-      <span class="pc-pill active">HSC-27</span>
-      <span class="pc-pill">HSC-26</span>
-      <span class="pc-pill">HSC-25</span>
-      <span class="pc-pill">+6 Batches</span>
+      <a class="pc-pill active" href="../govcd/bc/index.html?batch=hsc28">HSC-28</a>
+      <a class="pc-pill" href="../govcd/bc/index.html?batch=hsc27">HSC-27</a>
+      <a class="pc-pill" href="../govcd/bc/index.html?batch=hsc26">HSC-26</a>
+      <a class="pc-pill" href="../govcd/bc/index.html">+6 Batches</a>
     </div>
-  </a>
+  </div>
 
   <!-- Kabi Nazrul College -->
-  <a class="portal-card" href="../govcd/knc/index.html">
-    <div class="pc-top">
+  <div class="portal-card" onclick="if(!event.target.closest('a')) window.location.href='../govcd/knc/index.html'">
+    <a class="pc-top" href="../govcd/knc/index.html" style="text-decoration:none;color:inherit;">
       <div class="pc-icon" style="background:#FEF2F2;color:#DC2626;"><i class="fa-solid fa-feather"></i></div>
       <div class="pc-title">
         <h3>Kabi Nazrul Govt. College (KNC)</h3>
         <p>Laxmibazar, Old Dhaka &bull; All Groups</p>
       </div>
-    </div>
+    </a>
     <div class="pc-batches">
-      <span class="pc-pill active">HSC-27</span>
-      <span class="pc-pill">HSC-26</span>
-      <span class="pc-pill">HSC-25</span>
-      <span class="pc-pill">+6 Batches</span>
+      <a class="pc-pill active" href="../govcd/knc/index.html?batch=hsc28">HSC-28</a>
+      <a class="pc-pill" href="../govcd/knc/index.html?batch=hsc27">HSC-27</a>
+      <a class="pc-pill" href="../govcd/knc/index.html?batch=hsc26">HSC-26</a>
+      <a class="pc-pill" href="../govcd/knc/index.html">+3 Batches</a>
     </div>
-  </a>
+  </div>
 
   <!-- Savar Govt College -->
-  <a class="portal-card" href="../govcd/sgc/index.html">
-    <div class="pc-top">
+  <div class="portal-card" onclick="if(!event.target.closest('a')) window.location.href='../govcd/sgc/index.html'">
+    <a class="pc-top" href="../govcd/sgc/index.html" style="text-decoration:none;color:inherit;">
       <div class="pc-icon" style="background:#F0FDFA;color:#0D9488;"><i class="fa-solid fa-graduation-cap"></i></div>
       <div class="pc-title">
         <h3>Savar Govt. College (SGC)</h3>
         <p>Savar, Dhaka &bull; Full Profile Integration</p>
       </div>
-    </div>
+    </a>
     <div class="pc-batches">
-      <span class="pc-pill active">HSC-27</span>
-      <span class="pc-pill">HSC-26</span>
-      <span class="pc-pill">HSC-25</span>
-      <span class="pc-pill">+6 Batches</span>
+      <a class="pc-pill active" href="../govcd/sgc/index.html?batch=hsc28">HSC-28</a>
+      <a class="pc-pill" href="../govcd/sgc/index.html?batch=hsc27">HSC-27</a>
     </div>
-  </a>
+  </div>
+
+  <!-- Chittagong College -->
+  <div class="portal-card" onclick="if(!event.target.closest('a')) window.location.href='../govcd/ctg/index.html'">
+    <a class="pc-top" href="../govcd/ctg/index.html" style="text-decoration:none;color:inherit;">
+      <div class="pc-icon" style="background:#EEF2FF;color:#4F46E5;"><i class="fa-solid fa-graduation-cap"></i></div>
+      <div class="pc-title">
+        <h3>Chittagong College (CTG)</h3>
+        <p>Chittagong &bull; Science, Arts & Business &bull; Est. 1869</p>
+      </div>
+    </a>
+    <div class="pc-batches">
+      <a class="pc-pill active" href="../govcd/ctg/index.html?batch=hsc28">HSC-28</a>
+      <a class="pc-pill" href="../govcd/ctg/index.html?batch=hsc27">HSC-27</a>
+      <a class="pc-pill" href="../govcd/ctg/index.html?batch=hsc26">HSC-26</a>
+      <a class="pc-pill" href="../govcd/ctg/index.html">+2 Batches</a>
+    </div>
+  </div>
 </div>
 
 <footer>
   &copy; 2026 GOVCD &bull; Government College Student Database System &bull; Unified Format
 </footer>
 
-<script src="assets/js/portal.js"></script>
+<script src="assets/js/portal.js?v=20260922_1"></script>
 <script>
 window.addEventListener('DOMContentLoaded', () => {
   initAuth();
   initTheme();
+  const lockBtn = $('lockPortalBtn');
+  if (lockBtn) lockBtn.addEventListener('click', lockPortal);
 });
 </script>
 </body>
