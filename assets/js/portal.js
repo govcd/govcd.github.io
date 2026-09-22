@@ -48,6 +48,8 @@ const state = {
   pageSize: 150,
   currentView: 'photos', // 'photos' (default), 'compact', 'table'
   isLoading: false,
+  sortColumn: null, // 'monthly_income', 'annual_income', 'college_roll', 'admission_roll', 'ssc_gpa', 'ssc_year', 'student_name_en'
+  sortDirection: 'desc',
 
   // Advanced Filters State
   filters: {
@@ -66,6 +68,9 @@ const state = {
     electiveSubject: 'all',
     gpa: 'all',
     bookmarkedOnly: false,
+    incomePreset: 'all', // 'all', 'lt_20k', '20k_50k', '50k_1lakh', 'gt_1lakh'
+    incomeMin: null,
+    incomeMax: null,
   }
 };
 
@@ -626,8 +631,105 @@ function setupFilterModal() {
   const resetBtn = $('resetFiltersBtn');
   const applyBtn = $('applyFiltersBtn');
 
+  // Dynamically ensure Father's Monthly Income filter UI exists inside filter modal
+  let incBox = $('fModalIncomeBox');
+  if (!incBox) {
+    const fGrid = document.querySelector('#filterModalCard .filter-card-body, #filterModalCard .f-grid');
+    if (fGrid) {
+      const div = document.createElement('div');
+      div.id = 'fModalIncomeBox';
+      div.className = 'f-field';
+      div.style.gridColumn = '1 / -1';
+      div.style.marginBottom = '6px';
+      div.innerHTML = `
+        <label class="f-lbl"><i class="fa-solid fa-money-bill-wave" style="color:var(--success);margin-right:6px;"></i>Father's Monthly Income (বাবার মাসিক আয়)</label>
+        <div class="income-filter-container">
+          <select class="f-input" id="fModalIncomeSelect">
+            <option value="all">All Incomes (সকল মাসিক আয়)</option>
+            <option value="lt_20k">&lt; ৳20,000 (২০ হাজার টাকার নিচে)</option>
+            <option value="20k_50k">৳20,000 – ৳50,000 (২০হাজার থেকে ৫০হাজার)</option>
+            <option value="50k_1lakh">৳50,000 – ৳1,00,000 (৫০হাজার থেকে ১লাখ)</option>
+            <option value="gt_1lakh">&gt; ৳1,00,000 (১ লাখ টাকার বেশি)</option>
+            <option value="custom">Custom Range (কাস্টম আয় রেঞ্জ)</option>
+          </select>
+          <div class="income-quick-chips">
+            <button type="button" class="inc-chip active" data-preset="all">All Incomes</button>
+            <button type="button" class="inc-chip" data-preset="lt_20k">&lt; ৳20k</button>
+            <button type="button" class="inc-chip" data-preset="20k_50k">৳20k–50k</button>
+            <button type="button" class="inc-chip" data-preset="50k_1lakh">৳50k–1L</button>
+            <button type="button" class="inc-chip" data-preset="gt_1lakh">&gt; ৳1L</button>
+          </div>
+          <div class="income-custom-row" id="incomeCustomRow">
+            <div class="inc-input-box">
+              <span>৳</span>
+              <input type="number" id="fModalIncomeMin" class="f-input" placeholder="Min ৳" min="0" step="5000">
+            </div>
+            <span class="inc-sep">—</span>
+            <div class="inc-input-box">
+              <span>৳</span>
+              <input type="number" id="fModalIncomeMax" class="f-input" placeholder="Max ৳" min="0" step="5000">
+            </div>
+          </div>
+        </div>
+      `;
+      const sscYearField = $('fModalSscYear')?.closest('.f-field');
+      if (sscYearField && sscYearField.parentNode === fGrid) {
+        fGrid.insertBefore(div, sscYearField);
+      } else {
+        fGrid.appendChild(div);
+      }
+
+      // Synchronize Select and Quick Chips
+      const incSel = $('fModalIncomeSelect');
+      const chips = div.querySelectorAll('.inc-chip');
+
+      incSel?.addEventListener('change', () => {
+        const val = incSel.value;
+        chips.forEach(c => c.classList.toggle('active', c.dataset.preset === val));
+        if (val !== 'custom') {
+          const minEl = $('fModalIncomeMin');
+          const maxEl = $('fModalIncomeMax');
+          if (minEl) minEl.value = '';
+          if (maxEl) maxEl.value = '';
+        }
+        updateFilterModalMatchCount();
+      });
+
+      chips.forEach(btn => {
+        btn.addEventListener('click', () => {
+          chips.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          if (incSel) incSel.value = btn.dataset.preset;
+          const minEl = $('fModalIncomeMin');
+          const maxEl = $('fModalIncomeMax');
+          if (minEl) minEl.value = '';
+          if (maxEl) maxEl.value = '';
+          updateFilterModalMatchCount();
+        });
+      });
+
+      // Custom Range Inputs
+      const onCustomInput = () => {
+        chips.forEach(b => b.classList.remove('active'));
+        if (incSel) incSel.value = 'custom';
+        updateFilterModalMatchCount();
+      };
+      $('fModalIncomeMin')?.addEventListener('input', onCustomInput);
+      $('fModalIncomeMax')?.addEventListener('input', onCustomInput);
+    }
+  }
+
   if (openBtn && bd) {
     openBtn.addEventListener('click', () => {
+      // Sync income controls with state
+      const p = state.filters.incomePreset || 'all';
+      if ($('fModalIncomeSelect')) $('fModalIncomeSelect').value = p;
+      document.querySelectorAll('.inc-chip').forEach(b => {
+        b.classList.toggle('active', b.dataset.preset === p);
+      });
+      if ($('fModalIncomeMin')) $('fModalIncomeMin').value = state.filters.incomeMin || '';
+      if ($('fModalIncomeMax')) $('fModalIncomeMax').value = state.filters.incomeMax || '';
+
       updateFilterModalMatchCount();
       bd.classList.add('show');
     });
@@ -661,6 +763,14 @@ function setupFilterModal() {
       state.filters.electiveSubject = $('fModalElectiveSubject')?.value || 'all';
       state.filters.gpa = $('fModalGpa')?.value || 'all';
 
+      // Read income filters
+      const selVal = $('fModalIncomeSelect')?.value || 'all';
+      state.filters.incomePreset = (selVal === 'custom') ? 'all' : selVal;
+      const minVal = $('fModalIncomeMin')?.value ? parseFloat($('fModalIncomeMin').value) : null;
+      const maxVal = $('fModalIncomeMax')?.value ? parseFloat($('fModalIncomeMax').value) : null;
+      state.filters.incomeMin = (!isNaN(minVal) && minVal > 0) ? minVal : null;
+      state.filters.incomeMax = (!isNaN(maxVal) && maxVal > 0) ? maxVal : null;
+
       // Sync quick selects
       if ($('groupFilter')) $('groupFilter').value = state.filters.group;
       if ($('sectionFilter')) $('sectionFilter').value = state.filters.section;
@@ -693,12 +803,20 @@ function updateFilterModalMatchCount() {
   const selec = $('fModalElectiveSubject')?.value || state.filters.electiveSubject;
   const gpa = $('fModalGpa')?.value || state.filters.gpa;
 
+  const selVal = $('fModalIncomeSelect')?.value || state.filters.incomePreset || 'all';
+  const incPreset = (selVal === 'custom') ? 'all' : selVal;
+  const minVal = $('fModalIncomeMin')?.value ? parseFloat($('fModalIncomeMin').value) : null;
+  const maxVal = $('fModalIncomeMax')?.value ? parseFloat($('fModalIncomeMax').value) : null;
+
   const count = state.allStudents.filter(s => matchStudentFilters(s, {
     gender: g, group: grp, section: sec, district: dist,
     presentDistrict: presDist, permanentDistrict: permDist,
     board: brd, religion: rel, bloodGroup: bg, quota: qta, sscYear: yr,
     fourthSubject: s4th, electiveSubject: selec, gpa: gpa,
-    bookmarkedOnly: state.filters.bookmarkedOnly
+    bookmarkedOnly: state.filters.bookmarkedOnly,
+    incomePreset: incPreset,
+    incomeMin: (!isNaN(minVal) && minVal > 0) ? minVal : null,
+    incomeMax: (!isNaN(maxVal) && maxVal > 0) ? maxVal : null,
   })).length;
 
   const countEl = $('filterModalMatchCount');
@@ -711,6 +829,7 @@ function resetAllFilters() {
     board: 'all', religion: 'all', bloodGroup: 'all', quota: 'all', sscYear: 'all',
     presentDistrict: 'all', permanentDistrict: 'all', fourthSubject: 'all',
     electiveSubject: 'all', gpa: 'all', bookmarkedOnly: false,
+    incomePreset: 'all', incomeMin: null, incomeMax: null
   };
   ['fModalGender','fModalGroup','fModalSection','fModalDistrict','fModalBoard',
    'fModalReligion','fModalBloodGroup','fModalQuota','fModalSscYear',
@@ -719,6 +838,14 @@ function resetAllFilters() {
     const el = $(id);
     if (el) el.value = 'all';
   });
+
+  if ($('fModalIncomeSelect')) $('fModalIncomeSelect').value = 'all';
+  document.querySelectorAll('.inc-chip').forEach(b => {
+    b.classList.toggle('active', b.dataset.preset === 'all');
+  });
+  if ($('fModalIncomeMin')) $('fModalIncomeMin').value = '';
+  if ($('fModalIncomeMax')) $('fModalIncomeMax').value = '';
+
   if ($('groupFilter')) $('groupFilter').value = 'all';
   if ($('sectionFilter')) $('sectionFilter').value = 'all';
   const bmFilterBtn = $('filterBookmarksBtn');
@@ -829,6 +956,32 @@ function matchStudentFilters(s, f) {
     if (f.quota === 'ff' && !/freedom|ff/i.test(q)) return false;
     if (f.quota === 'eq' && !/education|eq/i.test(q)) return false;
   }
+
+  // Father's Monthly Income Filter
+  if (f.incomePreset && f.incomePreset !== 'all') {
+    const annual = Number(s.father_annual_income);
+    const monthly = (annual > 0 && !isNaN(annual)) ? Math.round(annual / 12) : 0;
+    if (f.incomePreset === 'lt_20k') {
+      if (monthly >= 20000 || monthly <= 0) return false;
+    } else if (f.incomePreset === '20k_50k') {
+      if (monthly < 20000 || monthly > 50000) return false;
+    } else if (f.incomePreset === '50k_1lakh') {
+      if (monthly < 50000 || monthly > 100000) return false;
+    } else if (f.incomePreset === 'gt_1lakh') {
+      if (monthly <= 100000) return false;
+    }
+  }
+  if (f.incomeMin !== null && f.incomeMin !== undefined && !isNaN(f.incomeMin) && f.incomeMin > 0) {
+    const annual = Number(s.father_annual_income);
+    const monthly = (annual > 0 && !isNaN(annual)) ? Math.round(annual / 12) : 0;
+    if (monthly < f.incomeMin) return false;
+  }
+  if (f.incomeMax !== null && f.incomeMax !== undefined && !isNaN(f.incomeMax) && f.incomeMax > 0) {
+    const annual = Number(s.father_annual_income);
+    const monthly = (annual > 0 && !isNaN(annual)) ? Math.round(annual / 12) : 0;
+    if (monthly > f.incomeMax) return false;
+  }
+
   return true;
 }
 
@@ -851,6 +1004,50 @@ function applyFilters() {
            (s.ssc_roll || '').includes(q) ||
            (s.ssc_reg || '').includes(q);
   });
+
+  // Table Sorting (Ascending / Descending)
+  if (state.sortColumn) {
+    const col = state.sortColumn;
+    const dir = (state.sortDirection === 'asc') ? 1 : -1;
+    state.filteredStudents.sort((a, b) => {
+      if (col === 'monthly_income') {
+        const vA = (a.father_annual_income && !isNaN(a.father_annual_income)) ? Math.round(Number(a.father_annual_income) / 12) : 0;
+        const vB = (b.father_annual_income && !isNaN(b.father_annual_income)) ? Math.round(Number(b.father_annual_income) / 12) : 0;
+        return (vA - vB) * dir;
+      }
+      if (col === 'annual_income') {
+        const vA = (a.father_annual_income && !isNaN(a.father_annual_income)) ? Number(a.father_annual_income) : 0;
+        const vB = (b.father_annual_income && !isNaN(b.father_annual_income)) ? Number(b.father_annual_income) : 0;
+        return (vA - vB) * dir;
+      }
+      if (col === 'ssc_gpa') {
+        const vA = parseFloat(a.ssc_gpa) || 0;
+        const vB = parseFloat(b.ssc_gpa) || 0;
+        return (vA - vB) * dir;
+      }
+      if (col === 'college_roll') {
+        const vA = parseInt(a.college_roll || a.short_roll || '0', 10) || 0;
+        const vB = parseInt(b.college_roll || b.short_roll || '0', 10) || 0;
+        return (vA - vB) * dir;
+      }
+      if (col === 'admission_roll') {
+        const vA = parseInt(a.admission_roll || '0', 10) || 0;
+        const vB = parseInt(b.admission_roll || '0', 10) || 0;
+        return (vA - vB) * dir;
+      }
+      if (col === 'ssc_year') {
+        const vA = parseInt(a.ssc_year || '0', 10) || 0;
+        const vB = parseInt(b.ssc_year || '0', 10) || 0;
+        return (vA - vB) * dir;
+      }
+      if (col === 'student_name_en') {
+        const vA = (a.student_name_en || '').toLowerCase();
+        const vB = (b.student_name_en || '').toLowerCase();
+        return vA.localeCompare(vB) * dir;
+      }
+      return 0;
+    });
+  }
 
   updateActiveFilterChips();
   renderActiveView();
@@ -881,6 +1078,22 @@ function updateActiveFilterChips() {
   if (state.filters.gpa !== 'all') {
     const gpaLabels = { '5.00': 'GPA 5.00', 'gte_4.8': 'GPA ≥ 4.80', 'gte_4.5': 'GPA ≥ 4.50', 'gte_4.0': 'GPA ≥ 4.00', 'lt_4.0': 'GPA < 4.00' };
     active.push({ key: 'gpa', label: gpaLabels[state.filters.gpa] || `GPA: ${state.filters.gpa}` });
+  }
+
+  // Income Filter Chips
+  if (state.filters.incomePreset && state.filters.incomePreset !== 'all') {
+    const presetLabels = {
+      'lt_20k': 'Income: < ৳20k',
+      '20k_50k': 'Income: ৳20k–৳50k',
+      '50k_1lakh': 'Income: ৳50k–৳1L',
+      'gt_1lakh': 'Income: > ৳1L'
+    };
+    active.push({ key: 'incomePreset', label: presetLabels[state.filters.incomePreset] || `Income: ${state.filters.incomePreset}` });
+  }
+  if ((state.filters.incomeMin !== null && state.filters.incomeMin > 0) || (state.filters.incomeMax !== null && state.filters.incomeMax > 0)) {
+    const minTxt = state.filters.incomeMin ? `৳${Number(state.filters.incomeMin).toLocaleString()}` : '৳0';
+    const maxTxt = state.filters.incomeMax ? `৳${Number(state.filters.incomeMax).toLocaleString()}` : '∞';
+    active.push({ key: 'incomeRange', label: `Income: ${minTxt} – ${maxTxt}` });
   }
 
   if (badge) {
@@ -918,6 +1131,16 @@ function removeFilter(key) {
     state.filters.bookmarkedOnly = false;
     const bmFilterBtn = $('filterBookmarksBtn');
     if (bmFilterBtn) bmFilterBtn.classList.remove('active');
+  } else if (key === 'incomePreset') {
+    state.filters.incomePreset = 'all';
+    document.querySelectorAll('.income-preset-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.preset === 'all');
+    });
+  } else if (key === 'incomeRange') {
+    state.filters.incomeMin = null;
+    state.filters.incomeMax = null;
+    if ($('fModalIncomeMin')) $('fModalIncomeMin').value = '';
+    if ($('fModalIncomeMax')) $('fModalIncomeMax').value = '';
   } else {
     state.filters[key] = 'all';
     const modalEl = {
@@ -1441,48 +1664,84 @@ function renderCompactGrid(students, container) {
   bindCardClicks(container, students);
 }
 
-/* ── VIEW 3: FULL TABLE VIEW ─────────────────────────────── */
+/* ── VIEW 3: FULL TABLE VIEW (GROUPED, STICKY & SORTABLE) ─────── */
+function setTableSort(colKey) {
+  if (state.sortColumn === colKey) {
+    state.sortDirection = (state.sortDirection === 'asc') ? 'desc' : 'asc';
+  } else {
+    state.sortColumn = colKey;
+    // Default descending for numeric values like income and GPA, ascending for text and roll
+    state.sortDirection = (colKey === 'monthly_income' || colKey === 'annual_income' || colKey === 'ssc_gpa') ? 'desc' : 'asc';
+  }
+  applyFilters();
+}
+window.setTableSort = setTableSort;
+
+function openStudentModalFromIdx(idx) {
+  const s = state.filteredStudents[idx];
+  if (s) openStudentModal(s);
+}
+window.openStudentModalFromIdx = openStudentModalFromIdx;
+
+function renderSortTh(label, colKey, extraClass = '') {
+  const isSorted = state.sortColumn === colKey;
+  const icon = isSorted
+    ? (state.sortDirection === 'asc' ? '<i class="fa-solid fa-sort-up sort-icon"></i>' : '<i class="fa-solid fa-sort-down sort-icon"></i>')
+    : '<i class="fa-solid fa-sort sort-icon"></i>';
+  const sortedCls = isSorted ? `sorted-${state.sortDirection}` : '';
+  return `<th class="sortable ${sortedCls} ${extraClass}" onclick="setTableSort('${colKey}')" title="Click to sort by ${label}">${label} ${icon}</th>`;
+}
+
 function renderTableView(students, container) {
   const html = `
     <div class="table-card">
       <div class="tbl-wrap">
         <table>
           <thead>
+            <!-- Group Category Banners -->
+            <tr class="tbl-group-hdr-row">
+              <th colspan="3" class="tbl-group-hdr grp-sticky"><i class="fa-solid fa-id-badge"></i> Student Identity</th>
+              <th colspan="4" class="tbl-group-hdr grp-personal col-group-start"><i class="fa-solid fa-user"></i> Personal Information</th>
+              <th colspan="7" class="tbl-group-hdr grp-academic col-group-start"><i class="fa-solid fa-graduation-cap"></i> Academic (SSC &amp; College)</th>
+              <th colspan="4" class="tbl-group-hdr grp-father col-group-start"><i class="fa-solid fa-user-tie"></i> Father's Information</th>
+              <th colspan="3" class="tbl-group-hdr grp-mother col-group-start"><i class="fa-solid fa-person-dress"></i> Mother's Information</th>
+              <th colspan="4" class="tbl-group-hdr grp-address col-group-start"><i class="fa-solid fa-map-location-dot"></i> Address &amp; District</th>
+              <th colspan="3" class="tbl-group-hdr grp-address col-group-start" style="background:#312E81 !important;color:#C7D2FE !important;border-top:3px solid #6366F1;"><i class="fa-solid fa-book-bookmark"></i> Subjects &amp; Quota</th>
+              <th colspan="3" class="tbl-group-hdr grp-payment col-group-start"><i class="fa-solid fa-receipt"></i> Payment &amp; Dossier</th>
+            </tr>
+            <!-- Individual Column Headers -->
             <tr>
-              <th style="width:46px;text-align:center;">#</th>
-              <th style="width:52px;text-align:center;">Photo</th>
-              <th>Student Name (EN)</th>
-              <th>Name (BN)</th>
-              <th>College Roll</th>
-              <th>Admission Roll</th>
+              <th class="sticky-col-idx" style="width:46px;text-align:center;">#</th>
+              <th class="sticky-col-photo" style="width:52px;text-align:center;">Photo</th>
+              ${renderSortTh('Student Name (EN)', 'student_name_en', 'sticky-col-name')}
+              <th class="col-group-start">Name (BN)</th>
+              <th>Gender</th>
+              <th>Blood</th>
+              <th>Religion</th>
+              ${renderSortTh('College Roll', 'college_roll', 'col-group-start')}
+              ${renderSortTh('Adm Roll', 'admission_roll')}
               <th>Group</th>
               <th>Section</th>
-              <th>Prac</th>
-              <th>Blood</th>
-              <th>Gender</th>
-              <th>DOB</th>
-              <th>Religion</th>
-              <th>Quota</th>
-              <th>Phone</th>
-              <th>Email</th>
-              <th>Father Name</th>
-              <th>Father Phone</th>
-              <th>Occupation</th>
-              <th>Monthly Income</th>
-              <th>Mother Name</th>
-              <th>Present Address</th>
-              <th>Present District</th>
-              <th>Permanent Address</th>
-              <th>Permanent District</th>
-              <th>Local Guardian</th>
+              ${renderSortTh('SSC GPA', 'ssc_gpa')}
               <th>SSC Board</th>
-              <th>SSC GPA</th>
-              <th>SSC Year</th>
-              <th>Elective</th>
+              ${renderSortTh('SSC Year', 'ssc_year')}
+              <th class="col-group-start">Father Name (EN)</th>
+              ${renderSortTh("Monthly Income", 'monthly_income')}
+              ${renderSortTh("Annual Income", 'annual_income')}
+              <th>Father Phone</th>
+              <th class="col-group-start">Mother Name (EN)</th>
+              <th>Mother Phone</th>
+              <th>Mother Occ.</th>
+              <th class="col-group-start">Present Address</th>
+              <th>Present Zila</th>
+              <th>Permanent Address</th>
+              <th>Permanent Zila</th>
+              <th class="col-group-start">Elective Subject</th>
               <th>4th Subject</th>
-              <th>Payment Date</th>
+              <th>Quota</th>
+              <th class="col-group-start">Payment Date</th>
               <th>Transaction No</th>
-              <th>Doc</th>
+              <th style="text-align:center;">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1490,53 +1749,55 @@ function renderTableView(students, container) {
               const photo = getStudentPhotoPath(s);
               const localPdf = getStudentLocalPdfUrl(s);
               const rollNum = s.short_roll ? String(s.short_roll).replace(/^0+/, '') : (idx + 1);
-              let inc = '—';
+              let incMonthlyStr = '—';
+              let incAnnualStr = '—';
               if (s.father_annual_income && !isNaN(s.father_annual_income) && Number(s.father_annual_income) > 0) {
-                inc = '৳' + Math.round(Number(s.father_annual_income) / 12).toLocaleString();
+                const ann = Number(s.father_annual_income);
+                incAnnualStr = '৳' + ann.toLocaleString();
+                incMonthlyStr = '৳' + Math.round(ann / 12).toLocaleString();
               }
               return `
                 <tr data-idx="${idx}">
-                  <td style="text-align:center;font-weight:700;color:var(--text-muted);">${rollNum}</td>
-                  <td style="text-align:center;">
+                  <td class="sticky-col-idx" style="text-align:center;font-weight:700;color:var(--text-muted);">${rollNum}</td>
+                  <td class="sticky-col-photo" style="text-align:center;">
                     ${photo ? `
                       <img class="tbl-thumb" src="${photo}" alt="" loading="lazy" onerror="this.style.display='none'">
                     ` : `
                       <div class="tbl-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--text-faint);"><i class="fa-solid fa-user"></i></div>
                     `}
                   </td>
-                  <td><strong>${esc(s.student_name_en || 'Unknown')}</strong></td>
-                  <td class="bn-text">${esc(s.student_name_bn || '—')}</td>
-                  <td style="font-family:monospace;font-weight:600;color:var(--accent);">${s.college_roll || '—'}</td>
+                  <td class="sticky-col-name"><strong>${esc(s.student_name_en || 'Unknown')}</strong></td>
+                  <td class="bn-text col-group-start">${esc(s.student_name_bn || '—')}</td>
+                  <td>${s.gender || '—'}</td>
+                  <td><strong>${s.blood_group || '—'}</strong></td>
+                  <td>${s.religion || '—'}</td>
+                  <td class="col-group-start" style="font-family:monospace;font-weight:600;color:var(--accent);">${s.college_roll || '—'}</td>
                   <td style="font-family:monospace;font-weight:700;color:var(--primary);">${s.admission_roll || '—'}</td>
                   <td><span class="badge badge-grp">${s.group_name || '—'}</span></td>
-                  <td>${(state.collegeCode === 'dc' && s.section && !/science/i.test(s.section)) ? `<span class="badge badge-sec">${s.section}</span>` : '—'}</td>
-                  <td>${(state.collegeCode === 'dc' && s.practical_group) ? s.practical_group : '—'}</td>
-                  <td><strong>${s.blood_group || '—'}</strong></td>
-                  <td>${s.gender || '—'}</td>
-                  <td>${s.date_of_birth || '—'}</td>
-                  <td>${s.religion || '—'}</td>
-                  <td>${cleanQuotaLabel(s.quota)}</td>
-                  <td style="font-family:monospace;">${s.student_phone || '—'}</td>
-                  <td>${s.student_email || '—'}</td>
-                  <td>${esc(s.father_name_en || '—')}</td>
-                  <td style="font-family:monospace;">${s.father_phone || '—'}</td>
-                  <td>${s.father_occupation || '—'}</td>
-                  <td style="color:var(--success);font-weight:600;">${inc}</td>
-                  <td>${esc(s.mother_name_en || '—')}</td>
-                  <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;" title="${esc(s.present_address)}">${esc(s.present_address || '—')}</td>
-                  <td>${s.present_district || '—'}</td>
-                  <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;" title="${esc(s.permanent_address)}">${esc(s.permanent_address || '—')}</td>
-                  <td>${s.permanent_district || '—'}</td>
-                  <td>${esc(s.local_guardian || '—')}</td>
-                  <td>${s.ssc_board || '—'}</td>
+                  <td>${(state.collegeCode === 'dc' && s.section && !/science/i.test(s.section)) ? `<span class="badge badge-sec">${s.section}</span>` : (s.section || '—')}</td>
                   <td><strong style="color:var(--success);">${s.ssc_gpa || '—'}</strong></td>
+                  <td>${s.ssc_board || '—'}</td>
                   <td>${s.ssc_year || '—'}</td>
-                  <td>${cleanSubjectLabel(s.elective_subjects)}</td>
+                  <td class="col-group-start">${esc(s.father_name_en || '—')}</td>
+                  <td style="color:var(--success);font-weight:700;font-family:monospace;">${incMonthlyStr}</td>
+                  <td style="color:var(--text-muted);font-size:12px;font-family:monospace;">${incAnnualStr}</td>
+                  <td style="font-family:monospace;">${s.father_phone || '—'}</td>
+                  <td class="col-group-start">${esc(s.mother_name_en || '—')}</td>
+                  <td style="font-family:monospace;">${s.mother_phone || '—'}</td>
+                  <td>${esc(s.mother_occupation || '—')}</td>
+                  <td class="col-group-start" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(s.present_address)}">${esc(s.present_address || '—')}</td>
+                  <td>${s.present_district || '—'}</td>
+                  <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(s.permanent_address)}">${esc(s.permanent_address || '—')}</td>
+                  <td>${s.permanent_district || '—'}</td>
+                  <td class="col-group-start">${cleanSubjectLabel(s.elective_subjects)}</td>
                   <td>${cleanSubjectLabel(s.fourth_subject)}</td>
-                  <td>${s.payment_date || '—'}</td>
+                  <td>${cleanQuotaLabel(s.quota)}</td>
+                  <td class="col-group-start">${s.payment_date || '—'}</td>
                   <td style="font-family:monospace;">${s.transaction_no || '—'}</td>
-                  <td onclick="event.stopPropagation()">
-                    ${localPdf ? `<a href="${localPdf}" target="_blank" style="color:var(--danger);font-size:14px;" title="Open Downloaded PDF"><i class="fa-solid fa-file-pdf"></i></a>` : '—'}
+                  <td onclick="event.stopPropagation()" style="text-align:center;white-space:nowrap;">
+                    ${localPdf ? `<a href="${localPdf}" target="_blank" style="color:var(--danger);font-size:14px;margin-right:6px;" title="Open Downloaded Application PDF"><i class="fa-solid fa-file-pdf"></i></a>` : ''}
+                    ${s.receipt_slip_url ? `<a href="${s.receipt_slip_url}" target="_blank" style="color:var(--success);font-size:14px;margin-right:6px;" title="Open Admission Fee Receipt Slip"><i class="fa-solid fa-receipt"></i></a>` : ''}
+                    <button class="tbl-dossier-btn" onclick="openStudentModalFromIdx(${idx})" title="Open Full Dossier" style="border:none;background:rgba(59,130,246,0.12);color:var(--primary);padding:3px 8px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600;"><i class="fa-solid fa-id-card"></i> Dossier</button>
                   </td>
                 </tr>
               `;
@@ -1752,70 +2013,132 @@ function openStudentModal(s) {
     infoItem('Payment Mode', s.payment_mode),
   ].filter(Boolean);
 
-  // Section 6: Enrolled Subjects
+  // Section 6: Enrolled Subjects (Formal Academic Table - Subject Name & Classification Only)
   let subjectsHtml = '';
-  const subjList = [];
-  if (s.all_subjects) {
+  const subjCards = [];
+
+  if (s.all_subjects && s.all_subjects.trim()) {
     s.all_subjects.split(';').map(p => p.trim()).filter(Boolean).forEach(p => {
-      let typeLabel = 'Compulsory';
-      let cls = 'sbadge mandatory';
+      let type = 'mandatory';
+      let typeLabel = 'Mandatory';
       if (/fourth|4th/i.test(p)) {
+        type = 'fourth';
         typeLabel = '4th Subject';
-        cls = 'sbadge fourth';
       } else if (/elective/i.test(p)) {
+        type = 'elective';
         typeLabel = 'Elective';
-        cls = 'sbadge elective';
       }
-      const cName = cleanSubjectName(p);
-      if (cName && cName !== '—' && !subjList.some(item => item.name === cName)) {
-        subjList.push({ name: cName, type: typeLabel, cls });
+
+      const name = cleanSubjectName(p) || 'Subject';
+      if (name && name !== '—' && !subjCards.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+        subjCards.push({ name, type, typeLabel });
       }
     });
   }
-  if (!subjList.length && (s.elective_subjects || s.fourth_subject)) {
+
+  if (!subjCards.length && (s.elective_subjects || s.fourth_subject)) {
     if (/science/i.test(s.group_name || 'Science')) {
-      subjList.push({ name: 'Bangla', type: 'Compulsory', cls: 'sbadge mandatory' });
-      subjList.push({ name: 'English', type: 'Compulsory', cls: 'sbadge mandatory' });
-      subjList.push({ name: 'ICT', type: 'Compulsory', cls: 'sbadge mandatory' });
-      subjList.push({ name: 'Physics', type: 'Compulsory', cls: 'sbadge mandatory' });
-      subjList.push({ name: 'Chemistry', type: 'Compulsory', cls: 'sbadge mandatory' });
+      subjCards.push({ name: 'Bangla', type: 'mandatory', typeLabel: 'Mandatory' });
+      subjCards.push({ name: 'English', type: 'mandatory', typeLabel: 'Mandatory' });
+      subjCards.push({ name: 'ICT', type: 'mandatory', typeLabel: 'Mandatory' });
+      subjCards.push({ name: 'Physics', type: 'mandatory', typeLabel: 'Mandatory' });
+      subjCards.push({ name: 'Chemistry', type: 'mandatory', typeLabel: 'Mandatory' });
     }
     if (s.elective_subjects) {
       const el = cleanSubjectName(s.elective_subjects);
-      if (el && el !== '—') subjList.push({ name: el, type: 'Elective', cls: 'sbadge elective' });
+      if (el && el !== '—' && !subjCards.some(c => c.name.toLowerCase() === el.toLowerCase())) {
+        subjCards.push({ name: el, type: 'elective', typeLabel: 'Elective' });
+      }
     }
     if (s.fourth_subject) {
       const f4 = cleanSubjectName(s.fourth_subject);
-      if (f4 && f4 !== '—') subjList.push({ name: f4, type: '4th Subject', cls: 'sbadge fourth' });
+      if (f4 && f4 !== '—' && !subjCards.some(c => c.name.toLowerCase() === f4.toLowerCase())) {
+        subjCards.push({ name: f4, type: 'fourth', typeLabel: '4th Subject' });
+      }
     }
   }
-  if (subjList.length) {
-    const pills = subjList.map(item => `
-      <span class="${item.cls}">
-        ${esc(item.name)} <span class="sb-type">(${item.type})</span>
-      </span>
-    `).join('');
+
+  if (subjCards.length) {
     subjectsHtml = `
       <div class="info-sec">
-        <div class="info-sec-hdr"><i class="fa-solid fa-book-bookmark"></i> Enrolled Subjects</div>
-        <div class="subjects-wrap">${pills}</div>
+        <div class="info-sec-hdr"><i class="fa-solid fa-graduation-cap"></i> Enrolled Subjects</div>
+        <div class="formal-subjects-card">
+          <table class="formal-subjects-table">
+            <thead>
+              <tr>
+                <th style="width: 44px; text-align: center;">#</th>
+                <th>Subject Name</th>
+                <th style="width: 140px; text-align: right;">Classification</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${subjCards.map((c, i) => `
+                <tr>
+                  <td style="text-align: center; color: var(--text-muted); font-weight: 600;">${i + 1}</td>
+                  <td>
+                    <div class="sub-name-cell">
+                      <span class="sub-dot ${c.type}"></span>
+                      <span>${esc(c.name)}</span>
+                    </div>
+                  </td>
+                  <td style="text-align: right;">
+                    <span class="formal-badge ${c.type}">${c.typeLabel}</span>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
   }
 
-  // Section 7: Official Documents
-  let docsHtml = '';
-  if (s.app_pdf_url) {
-    docsHtml += `<a href="${s.app_pdf_url}" target="_blank" class="doc-btn pdf"><i class="fa-solid fa-file-pdf"></i> Application Form Reprint PDF</a>`;
-  } else if (s.pdf_filename && state.currentBatch?.pdfBase) {
-    const gf = (s.group_name || 'Science').toLowerCase().replace(/ /g, '_');
-    docsHtml += `<a href="${state.currentBatch.pdfBase}${gf}/${s.pdf_filename}" target="_blank" class="doc-btn pdf"><i class="fa-solid fa-file-pdf"></i> Application Form PDF</a>`;
-  }
-  if (s.receipt_slip_url) {
-    docsHtml += `<a href="${s.receipt_slip_url}" target="_blank" class="doc-btn receipt"><i class="fa-solid fa-receipt"></i> Admission Fee Receipt Slip</a>`;
+  // Section 7: Official Documents & Links (5 Standard Options)
+  const localPdfUrl = getStudentLocalPdfUrl(s);
+  const localPhotoUrl = photo;
+  const pdfWebUrl = s.app_pdf_url || '';
+  const receiptWebUrl = s.receipt_slip_url || '';
+  const photoWebUrl = s.photo_web_url || '';
+
+  const docBtns = [];
+
+  // 1. PDF Info (File)
+  if (localPdfUrl) {
+    docBtns.push(`<a href="${localPdfUrl}" target="_blank" class="doc-btn doc-pdf-file" title="Download / Open Saved Application Form PDF"><i class="fa-solid fa-file-pdf"></i> PDF Info (File)</a>`);
+  } else {
+    docBtns.push(`<span class="doc-btn doc-pdf-file disabled" title="PDF file not downloaded locally"><i class="fa-solid fa-file-pdf"></i> PDF Info (File) <span class="doc-offline-tag">N/A</span></span>`);
   }
 
-  const localPdfUrl = getStudentLocalPdfUrl(s);
+  // 2. PDF Info (Link)
+  if (pdfWebUrl) {
+    docBtns.push(`<a href="${pdfWebUrl}" target="_blank" rel="noopener noreferrer" class="doc-btn doc-pdf-link" title="Open Official Admission Reprint Online"><i class="fa-solid fa-arrow-up-right-from-square"></i> PDF Info (Link)</a>`);
+  } else {
+    docBtns.push(`<span class="doc-btn doc-pdf-link disabled" title="Online reprint link unavailable"><i class="fa-solid fa-arrow-up-right-from-square"></i> PDF Info (Link) <span class="doc-offline-tag">N/A</span></span>`);
+  }
+
+  // 3. Payment Receipts
+  if (receiptWebUrl) {
+    docBtns.push(`<a href="${receiptWebUrl}" target="_blank" rel="noopener noreferrer" class="doc-btn doc-receipt" title="Open Official Admission Fee Receipt Slip"><i class="fa-solid fa-receipt"></i> Payment Receipts</a>`);
+  } else {
+    docBtns.push(`<span class="doc-btn doc-receipt disabled" title="Payment receipt link unavailable"><i class="fa-solid fa-receipt"></i> Payment Receipts <span class="doc-offline-tag">N/A</span></span>`);
+  }
+
+  // 4. Photo (File)
+  if (localPhotoUrl) {
+    docBtns.push(`<a href="${localPhotoUrl}" target="_blank" class="doc-btn doc-photo-file" title="View Saved Student Photo"><i class="fa-solid fa-image"></i> Photo (File)</a>`);
+  } else {
+    docBtns.push(`<span class="doc-btn doc-photo-file disabled" title="Local photo not found"><i class="fa-solid fa-image"></i> Photo (File) <span class="doc-offline-tag">N/A</span></span>`);
+  }
+
+  // 5. Photo (Link)
+  if (photoWebUrl) {
+    docBtns.push(`<a href="${photoWebUrl}" target="_blank" rel="noopener noreferrer" class="doc-btn doc-photo-link" title="Open Original High-Res Web Photo"><i class="fa-solid fa-up-right-from-square"></i> Photo (Link)</a>`);
+  } else {
+    docBtns.push(`<span class="doc-btn doc-photo-link disabled" title="Online photo URL unavailable"><i class="fa-solid fa-up-right-from-square"></i> Photo (Link) <span class="doc-offline-tag">N/A</span></span>`);
+  }
+
+  const docsHtml = docBtns.join('');
+
   const isDC = (state.collegeCode === 'dc');
   const cleanSec = (isDC && s.section && s.section !== '—' && !/science|all/i.test(s.section)) ? s.section.replace(/^(sec|section)\s*/i, '').trim() : '';
   const cleanPrac = (isDC && s.practical_group && s.practical_group !== '—') ? s.practical_group.replace(/^(prac:?|practical:?)\s*/i, '').trim() : '';
@@ -2058,6 +2381,109 @@ function initScrollTopButton() {
   });
 }
 
+/* ── UNIVERSAL PHOTO HOVER ZOOM PREVIEW (TABLE, CARDS, COMPACT, PHOTOS) ── */
+function initPhotoHoverZoom() {
+  let preview = $('hoverZoomPreview');
+  if (!preview) {
+    preview = document.createElement('div');
+    preview.id = 'hoverZoomPreview';
+    preview.className = 'hover-zoom-preview';
+    preview.innerHTML = `
+      <img id="hoverZoomImg" src="" alt="Student Photo">
+      <div class="hover-zoom-info">
+        <div id="hoverZoomName" class="hover-zoom-name"></div>
+        <div id="hoverZoomRoll" class="hover-zoom-roll"></div>
+      </div>
+    `;
+    document.body.appendChild(preview);
+  }
+
+  const imgEl = $('hoverZoomImg');
+  const nameEl = $('hoverZoomName');
+  const rollEl = $('hoverZoomRoll');
+
+  const showPreview = (target) => {
+    if (!target) return;
+    let src = '';
+    if (target.tagName && target.tagName.toLowerCase() === 'img') {
+      src = target.src;
+    } else {
+      const innerImg = target.querySelector('img');
+      if (innerImg) src = innerImg.src;
+    }
+    if (!src || src.includes('data:image/svg') || src.endsWith('#') || target.classList.contains('photo-placeholder')) {
+      return;
+    }
+
+    // Retrieve student name and roll if available
+    const cardOrRow = target.closest('[data-idx]');
+    let studentName = '';
+    let rollStr = '';
+    if (cardOrRow && cardOrRow.dataset.idx !== undefined) {
+      const idx = parseInt(cardOrRow.dataset.idx, 10);
+      const s = state.filteredStudents[idx];
+      if (s) {
+        studentName = s.student_name_en || '';
+        rollStr = s.short_roll ? `Roll #${s.short_roll}` : (s.college_roll ? `Roll: ${s.college_roll}` : '');
+      }
+    }
+
+    if (!studentName && target.alt) {
+      studentName = target.alt;
+    }
+
+    imgEl.src = src;
+    nameEl.textContent = studentName || 'Student Photo';
+    rollEl.textContent = rollStr || '';
+    rollEl.style.display = rollStr ? 'block' : 'none';
+
+    // Position relative to target thumbnail
+    const rect = target.getBoundingClientRect();
+    const previewWidth = 176;
+    const previewHeight = 245;
+
+    let left = rect.right + 14;
+    let top = rect.top + (rect.height / 2) - (previewHeight / 2);
+
+    // If overflowing right of viewport, place to the left
+    if (left + previewWidth > window.innerWidth - 12) {
+      left = rect.left - previewWidth - 14;
+    }
+    // Clamp inside viewport
+    if (left < 10) left = 10;
+    if (top < 10) top = 10;
+    if (top + previewHeight > window.innerHeight - 10) {
+      top = window.innerHeight - previewHeight - 10;
+    }
+
+    preview.style.left = `${Math.round(left)}px`;
+    preview.style.top = `${Math.round(top)}px`;
+    preview.classList.add('visible');
+  };
+
+  const hidePreview = () => {
+    if (preview) preview.classList.remove('visible');
+  };
+
+  // Delegated mouseover/mouseout across document
+  document.body.addEventListener('mouseover', (e) => {
+    const target = e.target.closest('.tbl-thumb, .compact-photo, .card-av, .photo-card img, .photo-card .img-wrap img');
+    if (target) {
+      showPreview(target);
+    }
+  });
+
+  document.body.addEventListener('mouseout', (e) => {
+    const target = e.target.closest('.tbl-thumb, .compact-photo, .card-av, .photo-card img, .photo-card .img-wrap img');
+    if (target) {
+      if (e.relatedTarget && target.contains(e.relatedTarget)) return;
+      hidePreview();
+    }
+  });
+
+  window.addEventListener('scroll', hidePreview, { passive: true });
+}
+
 /* ── PUBLIC INIT FUNCTION ────────────────────────────────── */
 window.initPortal = async function(opts) {
   state.collegeCode = opts.collegeCode || 'dc';
@@ -2067,6 +2493,7 @@ window.initPortal = async function(opts) {
   initAuth();
   initTheme();
   initScrollTopButton();
+  initPhotoHoverZoom();
   updateBookmarkBadge();
   
   // Dynamic Home Link: on local development inside /govcd/, link back to ../../govcd.github.io/index.html
