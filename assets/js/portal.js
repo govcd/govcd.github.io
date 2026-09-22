@@ -6,8 +6,11 @@
 'use strict';
 
 const CONFIG = {
-  PIN: '329874',
-  AUTH_KEY: 'govcd_auth',
+  AUTH_HASH: 'ea526e105b4ed1e24beeefa8f6e684538e64af062d1b880201f6db4444d2b489',
+  AUTH_SALT: 'govcd_sec_v2_2026_bd',
+  AUTH_KEY: 'govcd_auth_v2',
+  LOCKOUT_KEY: 'govcd_lockout_state',
+  MAX_ATTEMPTS: 5,
   PAGE_SIZE: 150,
 };
 
@@ -68,7 +71,133 @@ const state = {
 
 const $ = id => document.getElementById(id);
 
-/* ── PIN AUTHENTICATION (329874) ────────────────────────── */
+/* ── CRYPTOGRAPHIC SHA-256 (WebCrypto with Standard Fallback) ── */
+async function computeSha256(str) {
+  if (window.crypto && window.crypto.subtle && window.crypto.subtle.digest) {
+    try {
+      const data = new TextEncoder().encode(str);
+      const buf = await window.crypto.subtle.digest('SHA-256', data);
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) {}
+  }
+  return pureSha256(str);
+}
+
+function pureSha256(ascii) {
+  function rightRotate(value, amount) { return (value >>> amount) | (value << (32 - amount)); }
+  const mathPow = Math.pow;
+  const maxWord = mathPow(2, 32);
+  let lengthProperty = 'length';
+  let i, j;
+  let result = '';
+  const words = [];
+  const asciiBitLength = ascii[lengthProperty] * 8;
+  let hash = pureSha256.h = pureSha256.h || [];
+  const k = pureSha256.k = pureSha256.k || [];
+  let primeCounter = k[lengthProperty];
+  const isComposite = {};
+  for (let candidate = 2; primeCounter < 64; candidate++) {
+    if (!isComposite[candidate]) {
+      for (i = 0; i < 313; i += candidate) isComposite[i] = candidate;
+      hash[primeCounter] = (mathPow(candidate, .5) * maxWord) | 0;
+      k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0;
+    }
+  }
+  hash = hash.slice(0);
+  ascii += '\x80';
+  while (ascii[lengthProperty] % 64 - 56) ascii += '\x00';
+  for (i = 0; i < ascii[lengthProperty]; i++) {
+    j = ascii.charCodeAt(i);
+    if (j >> 8) return;
+    words[i >> 2] |= j << ((3 - i) % 4) * 8;
+  }
+  words[words[lengthProperty]] = ((asciiBitLength / maxWord) | 0);
+  words[words[lengthProperty]] = (asciiBitLength | 0);
+  for (j = 0; j < words[lengthProperty];) {
+    const w = words.slice(j, j += 16);
+    const oldHash = hash;
+    hash = hash.slice(0, 8);
+    for (i = 0; i < 64; i++) {
+      const w15 = w[i - 15], w2 = w[i - 2];
+      const s0 = rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3);
+      const s1 = rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10);
+      const ch = (hash[4] & hash[5]) ^ (~hash[4] & hash[6]);
+      const temp1 = (hash[7] + (rightRotate(hash[4], 6) ^ rightRotate(hash[4], 11) ^ rightRotate(hash[4], 25)) + ch + k[i] + (w[i] = (i < 16) ? w[i] : (w[i - 16] + s0 + w[i - 7] + s1) | 0)) | 0;
+      const temp2 = ((rightRotate(hash[0], 2) ^ rightRotate(hash[0], 13) ^ rightRotate(hash[0], 22)) + ((hash[0] & hash[1]) ^ (hash[0] & hash[2]) ^ (hash[1] & hash[2]))) | 0;
+      hash = [(temp1 + temp2) | 0, hash[0], hash[1], hash[2], (hash[3] + temp1) | 0, hash[4], hash[5], hash[6]];
+    }
+    for (i = 0; i < 8; i++) hash[i] = (hash[i] + oldHash[i]) | 0;
+  }
+  for (i = 0; i < 8; i++) {
+    for (let b = 3; b >= 0; b--) {
+      const byte = (hash[i] >> (b * 8)) & 255;
+      result += (byte < 16 ? '0' : '') + byte.toString(16);
+    }
+  }
+  return result;
+}
+
+/* ── LOCKOUT & RATE-LIMITING ──────────────────────────────── */
+function getLockoutState() {
+  try {
+    const raw = localStorage.getItem(CONFIG.LOCKOUT_KEY);
+    if (!raw) return { attempts: 0, lockedUntil: 0 };
+    return JSON.parse(raw);
+  } catch (e) {
+    return { attempts: 0, lockedUntil: 0 };
+  }
+}
+
+function setLockoutState(s) {
+  try {
+    localStorage.setItem(CONFIG.LOCKOUT_KEY, JSON.stringify(s));
+  } catch (e) {}
+}
+
+let countdownTimer = null;
+function checkLockoutTimer() {
+  const input = $('authPinInput');
+  const btn = $('authSubmitBtn');
+  const err = $('authErrMsg');
+  const ls = getLockoutState();
+  const now = Date.now();
+
+  if (ls.lockedUntil && now < ls.lockedUntil) {
+    if (input) input.disabled = true;
+    if (btn) btn.disabled = true;
+    const remainingSec = Math.ceil((ls.lockedUntil - now) / 1000);
+    const m = String(Math.floor(remainingSec / 60)).padStart(2, '0');
+    const s = String(remainingSec % 60).padStart(2, '0');
+    if (err) {
+      err.innerHTML = `<i class="fa-solid fa-clock-rotate-left" style="margin-right:5px;"></i> Too many failed attempts. Locked for <strong>${m}:${s}</strong>.`;
+      err.classList.add('show');
+      err.style.display = 'block';
+    }
+    if (!countdownTimer) {
+      countdownTimer = setInterval(() => {
+        const cur = getLockoutState();
+        const diff = cur.lockedUntil - Date.now();
+        if (diff <= 0) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+          cur.lockedUntil = 0;
+          setLockoutState(cur);
+          if (input) { input.disabled = false; input.focus(); }
+          if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-lock-open"></i> Unlock Portal'; }
+          if (err) { err.classList.remove('show'); err.style.display = 'none'; }
+        } else {
+          checkLockoutTimer();
+        }
+      }, 1000);
+    }
+    return true;
+  }
+  if (input) input.disabled = false;
+  if (btn) btn.disabled = false;
+  return false;
+}
+
+/* ── SECURE AUTHENTICATION ENGINE ──────────────────────────── */
 function initAuth() {
   const overlay = $('authOverlay');
   if (!overlay) return;
@@ -76,7 +205,11 @@ function initAuth() {
   const btn = $('authSubmitBtn');
   const err = $('authErrMsg');
 
-  function checkPin() {
+  // Check lockout on load
+  checkLockoutTimer();
+
+  async function checkPin() {
+    if (checkLockoutTimer()) return;
     if (!input) return;
     const rawVal = input.value || '';
     // Normalize Bengali digits (০-৯) to standard English digits (0-9)
@@ -94,7 +227,14 @@ function initAuth() {
       return;
     }
 
-    if (val === CONFIG.PIN) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Verifying...';
+
+    const inputHash = await computeSha256(CONFIG.AUTH_SALT + '_' + val);
+
+    if (inputHash === CONFIG.AUTH_HASH) {
+      // Clear lockout state on success
+      setLockoutState({ attempts: 0, lockedUntil: 0 });
       sessionStorage.setItem(CONFIG.AUTH_KEY, 'ok');
       localStorage.setItem(CONFIG.AUTH_KEY, 'ok');
       overlay.classList.add('unlocked');
@@ -103,20 +243,45 @@ function initAuth() {
         err.style.display = 'none';
       }
       showToast('Portal Unlocked Successfully');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-lock-open"></i> Unlock Portal';
+
+      // Reload active batch if needed
+      if (state.currentBatch && state.allStudents.length === 0) {
+        switchBatch(state.currentBatch);
+      }
     } else {
+      const ls = getLockoutState();
+      ls.attempts = (ls.attempts || 0) + 1;
+      let lockoutMsg = '';
+      if (ls.attempts >= CONFIG.MAX_ATTEMPTS) {
+        const lockoutMins = ls.attempts === CONFIG.MAX_ATTEMPTS ? 2 : (ls.attempts === CONFIG.MAX_ATTEMPTS + 1 ? 15 : 60);
+        ls.lockedUntil = Date.now() + (lockoutMins * 60 * 1000);
+        setLockoutState(ls);
+        checkLockoutTimer();
+        btn.innerHTML = '<i class="fa-solid fa-lock"></i> Locked';
+        return;
+      } else {
+        const remaining = CONFIG.MAX_ATTEMPTS - ls.attempts;
+        lockoutMsg = ` (${remaining} attempt${remaining > 1 ? 's' : ''} remaining)`;
+      }
+      setLockoutState(ls);
+
       input.classList.add('error');
       if (err) {
-        err.innerHTML = '<i class="fa-solid fa-circle-exclamation" style="margin-right:4px;"></i> Incorrect PIN! Please try again.';
+        err.innerHTML = `<i class="fa-solid fa-circle-exclamation" style="margin-right:4px;"></i> Incorrect PIN! Please try again.${lockoutMsg}`;
         err.classList.add('show');
         err.style.display = 'block';
       }
       setTimeout(() => input.classList.remove('error'), 400);
       input.value = '';
       input.focus();
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fa-solid fa-lock-open"></i> Unlock Portal';
     }
   }
 
-  // Bind events unconditionally so locking and re-unlocking always works
+  // Bind events unconditionally
   if (btn && !btn.dataset.bound) {
     btn.dataset.bound = 'true';
     btn.addEventListener('click', checkPin);
@@ -130,7 +295,7 @@ function initAuth() {
       }
     });
     input.addEventListener('input', () => {
-      if (err) {
+      if (err && !checkLockoutTimer()) {
         err.classList.remove('show');
         err.style.display = 'none';
       }
@@ -146,12 +311,53 @@ function initAuth() {
     overlay.classList.remove('unlocked');
     if (input) setTimeout(() => input.focus(), 150);
   }
+
+  initTamperGuard();
 }
 window.initAuth = initAuth;
 
+/* ── DOM TAMPER GUARD ──────────────────────────────────────── */
+function initTamperGuard() {
+  const overlay = $('authOverlay');
+  if (!overlay || window.__tamperGuardActive) return;
+  window.__tamperGuardActive = true;
+
+  const observer = new MutationObserver(() => {
+    const isAuth = sessionStorage.getItem(CONFIG.AUTH_KEY) === 'ok' || localStorage.getItem(CONFIG.AUTH_KEY) === 'ok';
+    if (!isAuth) {
+      if (!document.body.contains(overlay) || overlay.style.display === 'none' || overlay.style.visibility === 'hidden') {
+        state.allStudents = [];
+        state.filteredStudents = [];
+        const container = $('viewsContainer');
+        if (container) container.innerHTML = '';
+        overlay.style.display = 'flex';
+        overlay.style.visibility = 'visible';
+        overlay.style.opacity = '1';
+        overlay.classList.remove('unlocked');
+        if (!document.body.contains(overlay)) {
+          document.body.prepend(overlay);
+        }
+      }
+    }
+  });
+  observer.observe(document.body, { childList: true, attributes: true, subtree: true });
+}
+
+/* ── ZERO-TRACE PORTAL LOCK ────────────────────────────────── */
 function lockPortal() {
   sessionStorage.removeItem(CONFIG.AUTH_KEY);
   localStorage.removeItem(CONFIG.AUTH_KEY);
+  state.allStudents = [];
+  state.filteredStudents = [];
+  const container = $('viewsContainer');
+  if (container) {
+    container.innerHTML = `
+      <div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
+        <i class="fa-solid fa-lock fa-2x" style="color:var(--accent);margin-bottom:12px;"></i>
+        <p style="font-weight:600;font-size:14px;">Portal is locked. Please authenticate to view student records.</p>
+      </div>
+    `;
+  }
   const overlay = $('authOverlay');
   if (overlay) {
     overlay.classList.remove('unlocked');
@@ -166,7 +372,7 @@ function lockPortal() {
       setTimeout(() => input.focus(), 150);
     }
   }
-  showToast('Portal Locked');
+  showToast('Portal Locked & Memory Cleared');
 }
 window.lockPortal = lockPortal;
 
@@ -1862,6 +2068,12 @@ window.initPortal = async function(opts) {
   initTheme();
   initScrollTopButton();
   updateBookmarkBadge();
+  
+  // Dynamic Home Link: on local development inside /govcd/, link back to ../../govcd.github.io/index.html
+  if (window.location.pathname.includes('/govcd/')) {
+    const homeBtn = $('navHomeLink') || document.querySelector('.nav-logo-btn');
+    if (homeBtn) homeBtn.setAttribute('href', '../../govcd.github.io/index.html');
+  }
   
   // Intelligently select default batch:
   // 1. Honor URL query parameter ?batch=hsc28 or ?batch=28 if provided
