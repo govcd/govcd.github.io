@@ -30,10 +30,16 @@
       font-size: 12px; text-decoration: none;
     }
     .back-btn:hover { background: #1e293b; }
+    .open-btn {
+      background: #2563eb; border: none; color: #fff;
+      padding: 4px 14px; border-radius: 6px; cursor: pointer;
+      font-size: 12px; text-decoration: none; margin-left: auto;
+    }
+    .open-btn:hover { background: #1d4ed8; }
     .dl-btn {
       background: #dc2626; border: none; color: #fff;
       padding: 4px 14px; border-radius: 6px; cursor: pointer;
-      font-size: 12px; text-decoration: none; margin-left: auto;
+      font-size: 12px; text-decoration: none;
     }
     .dl-btn:hover { background: #b91c1c; }
     .err {
@@ -47,6 +53,7 @@
   <div class="info-bar" id="infoBar">
     <a class="back-btn" onclick="history.back()" title="Go Back">&#8592; Back</a>
     <span class="filename" id="fileName"></span>
+    <a class="open-btn" id="openBtn" target="_blank" title="Open Original PDF">&#8599; Open</a>
     <a class="dl-btn" id="dlBtn" title="Download PDF" download>&#8595; Download</a>
   </div>
   <div class="viewer pdf-frame" id="viewer"></div>
@@ -62,6 +69,7 @@
       document.getElementById('fileName').textContent = fname;
       document.getElementById('dlBtn').href = src;
       document.getElementById('dlBtn').setAttribute('download', fname);
+      document.getElementById('openBtn').href = src;
 
       // Use embed for PDF rendering (works in Chrome, Edge, Firefox)
       const embed = document.createElement('embed');

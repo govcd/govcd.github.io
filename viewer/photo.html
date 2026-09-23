@@ -36,10 +36,16 @@
       font-size: 12px; text-decoration: none;
     }
     .back-btn:hover { background: #1e293b; }
+    .open-btn {
+      background: #2563eb; border: none; color: #fff;
+      padding: 4px 14px; border-radius: 6px; cursor: pointer;
+      font-size: 12px; text-decoration: none; margin-left: auto;
+    }
+    .open-btn:hover { background: #1d4ed8; }
     .dl-btn {
       background: #16a34a; border: none; color: #fff;
       padding: 4px 14px; border-radius: 6px; cursor: pointer;
-      font-size: 12px; text-decoration: none; margin-left: auto;
+      font-size: 12px; text-decoration: none;
     }
     .dl-btn:hover { background: #15803d; }
     .err {
@@ -53,6 +59,7 @@
     <a class="back-btn" onclick="history.back()" title="Go Back">&#8592; Back</a>
     <span class="filename" id="fileName"></span>
     <span class="dim" id="imgDim"></span>
+    <a class="open-btn" id="openBtn" target="_blank" title="Open Original">&#8599; Open</a>
     <a class="dl-btn" id="dlBtn" title="Download Photo" download>&#8595; Download</a>
   </div>
   <div class="viewer" id="viewer"></div>
@@ -69,6 +76,7 @@
       document.getElementById('fileName').textContent = fname;
       document.getElementById('dlBtn').href = src;
       document.getElementById('dlBtn').setAttribute('download', fname);
+      document.getElementById('openBtn').href = src;
 
       const img = new Image();
       img.src = src;

@@ -424,13 +424,13 @@ function buildCollegeSwitcher(activeCode) {
   if (!wrap || !menu) return;
 
   const current = COLLEGES.find(c => c.code === activeCode) || COLLEGES[0];
-  if (btnText) btnText.innerHTML = `<i class="fa-solid ${current.icon}"></i> ${current.short} <i class="fa-solid fa-chevron-down" style="font-size:9px;margin-left:2px;"></i>`;
+  if (btnText) btnText.innerHTML = `${current.short} <i class="fa-solid fa-chevron-down" style="font-size:9px;margin-left:2px;"></i>`;
 
   menu.innerHTML = `
     <div class="switcher-menu-hdr">Select Government College</div>
     ${COLLEGES.map(c => `
       <a class="switcher-item ${c.code === activeCode ? 'active' : ''}" data-college="${c.code}" href="../${c.code}/index.html">
-        <span><i class="fa-solid ${c.icon}" style="margin-right:7px;opacity:.7;"></i>${c.name}</span>
+        <span>${c.name}</span>
         <span class="s-badge">${c.short}</span>
       </a>
     `).join('')}
@@ -447,13 +447,13 @@ function buildBatchSwitcher(activeBatchKey) {
 
   const current = state.batches.find(b => b.key === activeBatchKey) || state.batches[0] || ALL_BATCHES[0];
   // Displays only the number (e.g. 27 or 26) as requested
-  if (btnText) btnText.innerHTML = `<i class="fa-solid fa-graduation-cap"></i> ${current.label} <i class="fa-solid fa-chevron-down" style="font-size:9px;margin-left:2px;"></i>`;
+  if (btnText) btnText.innerHTML = `${current.label} <i class="fa-solid fa-chevron-down" style="font-size:9px;margin-left:2px;"></i>`;
 
   menu.innerHTML = `
     <div class="switcher-menu-hdr">Select Admission Batch</div>
     ${state.batches.map(b => `
       <div class="switcher-item ${b.key === (state.currentBatch?.key || activeBatchKey) ? 'active' : ''}" data-batch="${b.key}">
-        <span><i class="fa-solid fa-calendar-days" style="margin-right:7px;opacity:.7;"></i>HSC-${b.label}</span>
+        <span>HSC-${b.label}</span>
         <span class="s-badge">${b.session || ''}</span>
       </div>
     `).join('')}
@@ -568,7 +568,7 @@ function setupSearchAndFilters() {
   const secSelect = $('sectionFilter');
 
   if (sInput) {
-    sInput.placeholder = "Search anything, or use #109, /f (family), /p (personal), /a (address), /s (ssc)...";
+    sInput.placeholder = "Search anything";
     let timer = null;
     sInput.addEventListener('input', () => {
       if (clearBtn) clearBtn.style.display = sInput.value ? 'block' : 'none';
@@ -2694,12 +2694,6 @@ function infoItem(label, val, allowCopy, studentContext) {
         <button class="action-mini-btn copy" onclick="copyText('${cleanVal}', this)" title="Copy Phone Number">
           <i class="fa-regular fa-copy"></i>
         </button>
-        <a href="https://wa.me/${intl}" target="_blank" class="action-mini-btn whatsapp" title="Chat on WhatsApp">
-          <i class="fa-brands fa-whatsapp"></i>
-        </a>
-        <a href="https://t.me/+${intl}" target="_blank" class="action-mini-btn telegram" title="Chat on Telegram">
-          <i class="fa-brands fa-telegram"></i>
-        </a>
       `;
     } else if (allowCopy) {
       actionsHtml = `<button class="action-mini-btn copy" onclick="copyText('${cleanVal}', this)" title="Copy ${label}"><i class="fa-regular fa-copy"></i></button>`;
