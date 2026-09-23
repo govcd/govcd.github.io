@@ -932,7 +932,6 @@ html.dark .photo-card .p-adm { color: var(--accent); }
 }
 .tbl-wrap {
   overflow-x: auto;
-  max-height: 680px;
   position: relative;
 }
 table {
@@ -2813,5 +2812,42 @@ html.dark .btn-bookmark-trigger.active {
   box-shadow: 0 8px 24px rgba(37, 99, 235, 0.45);
 }
 .scroll-top-fab:active {
+  transform: translateY(0);
+}
+
+/* ── SCROLL TO BOTTOM FAB ─────────────────────────────────── */
+.scroll-bottom-fab {
+  position: fixed;
+  bottom: 82px;
+  right: 28px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #FFFFFF;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  z-index: 9999;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(16px);
+  transition: opacity 0.22s ease, visibility 0.22s ease, transform 0.22s ease, background 0.15s ease;
+}
+.scroll-bottom-fab.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.scroll-bottom-fab:hover {
+  background: var(--accent-hover);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.45);
+}
+.scroll-bottom-fab:active {
   transform: translateY(0);
 }

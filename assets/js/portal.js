@@ -45,6 +45,7 @@ const state = {
   allStudents: [],
   filteredStudents: [],
   currentPage: 1,
+  startPage: 1,
   pageSize: 150,
   currentView: 'photos', // 'photos' (default), 'compact', 'table'
   isLoading: false,
@@ -516,6 +517,7 @@ function formatGpa(gpa) {
 async function switchBatch(batch) {
   state.currentBatch = batch;
   state.currentPage = 1;
+  state.startPage = 1;
   const btnText = $('batchBtnText');
   if (btnText) btnText.innerHTML = `<i class="fa-solid fa-graduation-cap"></i> ${batch.label} <i class="fa-solid fa-chevron-down" style="font-size:9px;margin-left:2px;"></i>`;
   buildBatchSwitcher(batch.key);
@@ -574,6 +576,7 @@ function setupSearchAndFilters() {
       clearTimeout(timer);
       timer = setTimeout(() => {
         state.currentPage = 1;
+        state.startPage = 1;
         applyFilters();
       }, 200);
     });
@@ -585,6 +588,7 @@ function setupSearchAndFilters() {
       clearBtn.style.display = 'none';
       updateActiveSearchChips('');
       state.currentPage = 1;
+      state.startPage = 1;
       applyFilters();
       sInput.focus();
     });
@@ -624,6 +628,7 @@ function setupSearchAndFilters() {
         updateActiveSearchChips(sInput.value);
         sInput.focus();
         state.currentPage = 1;
+        state.startPage = 1;
         applyFilters();
       });
     });
@@ -635,6 +640,7 @@ function setupSearchAndFilters() {
       const mGroup = $('fModalGroup');
       if (mGroup) mGroup.value = gSelect.value;
       state.currentPage = 1;
+      state.startPage = 1;
       applyFilters();
     });
   }
@@ -645,6 +651,7 @@ function setupSearchAndFilters() {
       const mSec = $('fModalSection');
       if (mSec) mSec.value = secSelect.value;
       state.currentPage = 1;
+      state.startPage = 1;
       applyFilters();
     });
   }
@@ -669,6 +676,7 @@ function setupSearchAndFilters() {
       state.filters.bookmarkedOnly = !state.filters.bookmarkedOnly;
       bmFilterBtn.classList.toggle('active', state.filters.bookmarkedOnly);
       state.currentPage = 1;
+      state.startPage = 1;
       applyFilters();
     });
   }
@@ -830,6 +838,7 @@ function setupFilterModal() {
 
       bd.classList.remove('show');
       state.currentPage = 1;
+      state.startPage = 1;
       applyFilters();
     });
   }
@@ -904,6 +913,7 @@ function resetAllFilters() {
   const bmFilterBtn = $('filterBookmarksBtn');
   if (bmFilterBtn) bmFilterBtn.classList.remove('active');
   state.currentPage = 1;
+  state.startPage = 1;
   applyFilters();
 }
 
@@ -1452,6 +1462,7 @@ function removeFilter(key) {
     if (key === 'section' && $('sectionFilter')) $('sectionFilter').value = 'all';
   }
   state.currentPage = 1;
+  state.startPage = 1;
   applyFilters();
 }
 window.removeFilter = removeFilter;
@@ -1501,6 +1512,14 @@ function getGroupFolder(groupName) {
   if (g.includes('bus') || g.includes('com') || g.includes('b.stu')) return 'bstudies';
   if (g.includes('hum') || g.includes('art')) return 'humanities';
   return 'science';
+}
+
+function getGroupAbbrev(groupName) {
+  const g = (groupName || '').toLowerCase();
+  if (g.includes('bus') || g.includes('com') || g.includes('b.stu')) return 'B. Studies';
+  if (g.includes('hum') || g.includes('art')) return 'Humanities';
+  if (g.includes('sci')) return 'Science';
+  return '';
 }
 
 function getStudentPhotoPath(s) {
@@ -1812,8 +1831,10 @@ function renderActiveView() {
     return;
   }
 
-  // 150 student chunking
-  const visibleStudents = state.filteredStudents.slice(0, state.currentPage * state.pageSize);
+  // Hybrid pagination: startPage tracks first visible page
+  // Load More keeps startPage=1 (cumulative), page clicks set startPage=currentPage
+  const startIdx = (state.startPage - 1) * state.pageSize;
+  const visibleStudents = state.filteredStudents.slice(startIdx, state.currentPage * state.pageSize);
 
   if (state.currentView === 'detailed' || state.currentView === 'cards') {
     renderDetailedCards(visibleStudents, container);
@@ -2029,7 +2050,9 @@ function setTableSort(colKey) {
 window.setTableSort = setTableSort;
 
 function openStudentModalFromIdx(idx) {
-  const s = state.filteredStudents[idx];
+  // idx is local within the visible slice — add page offset
+  const pageOffset = (state.startPage - 1) * state.pageSize;
+  const s = state.filteredStudents[pageOffset + idx];
   if (s) openStudentModal(s);
 }
 window.openStudentModalFromIdx = openStudentModalFromIdx;
@@ -2221,9 +2244,9 @@ function renderPagination(total) {
     return;
   }
 
-  const shown = Math.min(state.currentPage * state.pageSize, total);
   const totalPages = Math.ceil(total / state.pageSize);
-  const hasMore = shown < total;
+  const startNum = (state.startPage - 1) * state.pageSize + 1;
+  const endNum = Math.min(state.currentPage * state.pageSize, total);
 
   let pagesHtml = '';
   for (let p = 1; p <= totalPages; p++) {
@@ -2240,9 +2263,9 @@ function renderPagination(total) {
 
   wrap.innerHTML = `
     <div class="pagination-wrapper">
-      ${hasMore ? `
+      ${state.currentPage < totalPages ? `
         <button class="load-more-btn" id="loadMoreBtn">
-          <i class="fa-solid fa-angles-down"></i> Load More Students (+150)
+          <i class="fa-solid fa-angles-down"></i> Load More Students (+${state.pageSize})
         </button>
       ` : ''}
       <div class="page-controls">
@@ -2255,14 +2278,16 @@ function renderPagination(total) {
         </button>
       </div>
       <div class="page-status">
-        Showing <strong>${shown}</strong> of <strong>${total.toLocaleString()}</strong> students (Page ${state.currentPage} of ${totalPages})
+        Showing <strong>${startNum}–${endNum}</strong> of <strong>${total.toLocaleString()}</strong> students (Page ${state.currentPage} of ${totalPages})
       </div>
     </div>
   `;
 
+
   const loadBtn = $('loadMoreBtn');
   if (loadBtn) {
     loadBtn.addEventListener('click', () => {
+      // Cumulative: keep startPage, just extend currentPage
       state.currentPage++;
       renderActiveView();
       updateResultCount();
@@ -2274,6 +2299,7 @@ function renderPagination(total) {
     prevBtn.addEventListener('click', () => {
       if (state.currentPage > 1) {
         state.currentPage--;
+        state.startPage = state.currentPage;
         renderActiveView();
         updateResultCount();
         scrollToTop();
@@ -2286,6 +2312,7 @@ function renderPagination(total) {
     nextBtn.addEventListener('click', () => {
       if (state.currentPage < totalPages) {
         state.currentPage++;
+        state.startPage = state.currentPage;
         renderActiveView();
         updateResultCount();
         scrollToTop();
@@ -2296,6 +2323,7 @@ function renderPagination(total) {
   wrap.querySelectorAll('[data-page]').forEach(btn => {
     btn.addEventListener('click', () => {
       state.currentPage = +btn.dataset.page;
+      state.startPage = state.currentPage;
       renderActiveView();
       updateResultCount();
       scrollToTop();
@@ -2538,7 +2566,7 @@ function openStudentModal(s) {
         <button class="dos-act-btn close-btn" id="modalCloseBtn" title="Close"><i class="fa-solid fa-xmark"></i></button>
       </div>
       ${photo ? `
-        <img class="dos-avatar" src="${photo}" alt="${esc(s.student_name_en)}" data-name="${esc(s.student_name_en || '')}" data-roll="${s.short_roll ? ('Roll #' + String(s.short_roll).replace(/^0+/, '')) : (s.college_roll ? ('Roll ' + s.college_roll) : '')}" onclick="window.open(this.src, '_blank')">
+        <img class="dos-avatar" src="${photo}" alt="${esc(s.student_name_en)}" data-name="${esc(s.student_name_en || '')}" data-roll="${s.short_roll ? ('#' + String(s.short_roll).replace(/^0+/, '') + (getGroupAbbrev(s.group_name) ? ' · ' + getGroupAbbrev(s.group_name) : '')) : (s.college_roll ? ('#' + s.college_roll + (getGroupAbbrev(s.group_name) ? ' · ' + getGroupAbbrev(s.group_name) : '')) : (getGroupAbbrev(s.group_name) || ''))}" onclick="window.open(this.src, '_blank')">
       ` : `
         <div class="dos-avatar" style="display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:36px;"><i class="fa-solid fa-user"></i></div>
       `}
@@ -2749,15 +2777,42 @@ function initScrollTopButton() {
   }
 
   window.addEventListener('scroll', () => {
+    const nearBottom = (window.innerHeight + window.scrollY) >= (document.body.scrollHeight - 280);
     if (window.scrollY > 280) {
       fab.classList.add('visible');
     } else {
       fab.classList.remove('visible');
     }
+    // Also toggle bottom fab
+    const bFab = $('scrollBottomFab');
+    if (bFab) {
+      if (window.scrollY > 280 && !nearBottom) {
+        bFab.classList.add('visible');
+      } else {
+        bFab.classList.remove('visible');
+      }
+    }
   }, { passive: true });
 
   fab.addEventListener('click', () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
+/* ── SCROLL TO BOTTOM FLOATING ACTION BUTTON ─────────────── */
+function initScrollBottomButton() {
+  let fab = $('scrollBottomFab');
+  if (!fab) {
+    fab = document.createElement('button');
+    fab.id = 'scrollBottomFab';
+    fab.className = 'scroll-bottom-fab';
+    fab.setAttribute('title', 'Scroll to Bottom (নিচে যান)');
+    fab.innerHTML = '<i class="fa-solid fa-arrow-down"></i>';
+    document.body.appendChild(fab);
+  }
+
+  fab.addEventListener('click', () => {
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
   });
 }
 
@@ -2806,10 +2861,13 @@ function initPhotoHoverZoom() {
       const cardOrRow = target.closest('[data-idx]');
       if (cardOrRow && cardOrRow.dataset.idx !== undefined) {
         const idx = parseInt(cardOrRow.dataset.idx, 10);
-        const s = state.filteredStudents[idx];
+        // Account for page offset — use startPage since data-idx is relative to the visible slice start
+        const pageOffset = (state.startPage - 1) * state.pageSize;
+        const s = state.filteredStudents[pageOffset + idx];
         if (s) {
           studentName = s.student_name_en || '';
-          rollStr = s.short_roll ? `Roll #${s.short_roll}` : (s.college_roll ? `Roll: ${s.college_roll}` : '');
+          const grpAbbr = getGroupAbbrev(s.group_name);
+          rollStr = s.short_roll ? `#${s.short_roll}${grpAbbr ? ' · ' + grpAbbr : ''}` : (s.college_roll ? `#${s.college_roll}${grpAbbr ? ' · ' + grpAbbr : ''}` : (grpAbbr || ''));
         }
       }
     }
@@ -2879,6 +2937,7 @@ window.initPortal = async function(opts) {
   initAuth();
   initTheme();
   initScrollTopButton();
+  initScrollBottomButton();
   initPhotoHoverZoom();
   updateBookmarkBadge();
   
