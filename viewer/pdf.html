@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" href="../assets/images/favicon-pdf.png">
+  <link rel="icon" type="image/x-icon" href="../assets/images/favicon-pdf.ico">
+  <title>PDF Viewer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #1a1a1a; overflow: hidden; }
+    .viewer {
+      width: 100%; height: 100%;
+    }
+    .viewer iframe, .viewer embed, .viewer object {
+      width: 100%; height: 100%; border: none;
+    }
+    .info-bar {
+      position: fixed; top: 0; left: 0; right: 0;
+      background: rgba(0,0,0,.8); backdrop-filter: blur(8px);
+      color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif;
+      font-size: 13px; padding: 8px 16px;
+      display: flex; align-items: center; gap: 10px;
+      z-index: 10;
+    }
+    .info-bar .filename { font-weight: 600; }
+    .back-btn {
+      background: none; border: 1px solid #475569; color: #e2e8f0;
+      padding: 4px 12px; border-radius: 6px; cursor: pointer;
+      font-size: 12px; text-decoration: none;
+    }
+    .back-btn:hover { background: #1e293b; }
+    .dl-btn {
+      background: #dc2626; border: none; color: #fff;
+      padding: 4px 14px; border-radius: 6px; cursor: pointer;
+      font-size: 12px; text-decoration: none; margin-left: auto;
+    }
+    .dl-btn:hover { background: #b91c1c; }
+    .err {
+      color: #f87171; text-align: center; padding: 40px;
+      font-family: 'Inter', system-ui, sans-serif; font-size: 15px;
+    }
+    .pdf-frame { margin-top: 40px; height: calc(100% - 40px); }
+  </style>
+</head>
+<body>
+  <div class="info-bar" id="infoBar">
+    <a class="back-btn" onclick="history.back()" title="Go Back">&#8592; Back</a>
+    <span class="filename" id="fileName"></span>
+    <a class="dl-btn" id="dlBtn" title="Download PDF" download>&#8595; Download</a>
+  </div>
+  <div class="viewer pdf-frame" id="viewer"></div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const src = params.get('src');
+    if (!src) {
+      document.getElementById('viewer').innerHTML = '<div class="err">No PDF source specified.</div>';
+    } else {
+      const fname = decodeURIComponent(src.split('/').pop().split('?')[0]);
+      document.title = fname + ' - PDF Viewer';
+      document.getElementById('fileName').textContent = fname;
+      document.getElementById('dlBtn').href = src;
+      document.getElementById('dlBtn').setAttribute('download', fname);
+
+      // Use embed for PDF rendering (works in Chrome, Edge, Firefox)
+      const embed = document.createElement('embed');
+      embed.src = src;
+      embed.type = 'application/pdf';
+      document.getElementById('viewer').appendChild(embed);
+    }
+  </script>
+</body>
+</html>

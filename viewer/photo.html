@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" href="../assets/images/favicon-photo.png">
+  <link rel="icon" type="image/x-icon" href="../assets/images/favicon-photo.ico">
+  <title>Photo Viewer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #0a0a0a; overflow: hidden; }
+    .viewer {
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; height: 100%;
+    }
+    .viewer img {
+      max-width: 100%; max-height: 100%; object-fit: contain;
+      cursor: zoom-in; transition: transform .2s ease;
+    }
+    .viewer img.zoomed { cursor: zoom-out; transform: scale(2); }
+    .info-bar {
+      position: fixed; top: 0; left: 0; right: 0;
+      background: rgba(0,0,0,.75); backdrop-filter: blur(8px);
+      color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif;
+      font-size: 13px; padding: 8px 16px;
+      display: flex; align-items: center; gap: 10px;
+      opacity: 1; transition: opacity .3s;
+      z-index: 10;
+    }
+    .info-bar.hide { opacity: 0; pointer-events: none; }
+    .info-bar .filename { font-weight: 600; }
+    .info-bar .dim { color: #94a3b8; }
+    .back-btn {
+      background: none; border: 1px solid #475569; color: #e2e8f0;
+      padding: 4px 12px; border-radius: 6px; cursor: pointer;
+      font-size: 12px; text-decoration: none;
+    }
+    .back-btn:hover { background: #1e293b; }
+    .dl-btn {
+      background: #16a34a; border: none; color: #fff;
+      padding: 4px 14px; border-radius: 6px; cursor: pointer;
+      font-size: 12px; text-decoration: none; margin-left: auto;
+    }
+    .dl-btn:hover { background: #15803d; }
+    .err {
+      color: #f87171; text-align: center; padding: 40px;
+      font-family: 'Inter', system-ui, sans-serif; font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+  <div class="info-bar" id="infoBar">
+    <a class="back-btn" onclick="history.back()" title="Go Back">&#8592; Back</a>
+    <span class="filename" id="fileName"></span>
+    <span class="dim" id="imgDim"></span>
+    <a class="dl-btn" id="dlBtn" title="Download Photo" download>&#8595; Download</a>
+  </div>
+  <div class="viewer" id="viewer"></div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const src = params.get('src');
+    if (!src) {
+      document.getElementById('viewer').innerHTML = '<div class="err">No image source specified.</div>';
+    } else {
+      // Set title from filename
+      const fname = decodeURIComponent(src.split('/').pop().split('?')[0]);
+      document.title = fname + ' - Photo Viewer';
+      document.getElementById('fileName').textContent = fname;
+      document.getElementById('dlBtn').href = src;
+      document.getElementById('dlBtn').setAttribute('download', fname);
+
+      const img = new Image();
+      img.src = src;
+      img.alt = fname;
+      img.onload = function() {
+        document.getElementById('imgDim').textContent = img.naturalWidth + ' × ' + img.naturalHeight;
+      };
+      img.onerror = function() {
+        document.getElementById('viewer').innerHTML = '<div class="err">Failed to load image: ' + fname + '</div>';
+      };
+      img.addEventListener('click', function() {
+        this.classList.toggle('zoomed');
+      });
+      document.getElementById('viewer').appendChild(img);
+
+      // Auto-hide info bar
+      let hideTimer;
+      const bar = document.getElementById('infoBar');
+      function showBar() { bar.classList.remove('hide'); clearTimeout(hideTimer); hideTimer = setTimeout(() => bar.classList.add('hide'), 3000); }
+      document.addEventListener('mousemove', showBar);
+      showBar();
+    }
+  </script>
+</body>
+</html>

@@ -1540,6 +1540,23 @@ function getStudentLocalPdfUrl(s) {
   return null;
 }
 
+/**
+ * Build viewer URL for photo/PDF files.
+ * @param {'photo'|'pdf'} type - Viewer type
+ * @param {string} srcUrl - The raw file URL to view
+ * @returns {string} Full viewer URL with ?src= param
+ */
+function getViewerUrl(type, srcUrl) {
+  // Resolve relative paths to absolute URLs so the viewer page can load them
+  const absoluteSrc = new URL(srcUrl, window.location.href).href;
+  // Determine viewer base path depending on environment
+  const isLocal = window.location.pathname.includes('/govcd/');
+  const viewerBase = isLocal
+    ? '/govcd.github.io/viewer/'   // local dev: http://localhost:8080/govcd.github.io/viewer/
+    : '/viewer/';                   // production: https://govcd.github.io/viewer/
+  return viewerBase + type + '.html?src=' + encodeURIComponent(absoluteSrc);
+}
+
 function formatRollTag(shortRoll, fallbackIdx) {
   if (shortRoll !== undefined && shortRoll !== null && String(shortRoll).trim() !== '') {
     const clean = String(shortRoll).replace(/^0+/, '');
@@ -2508,7 +2525,7 @@ function openStudentModal(s) {
 
   // 1. PDF Info (File)
   if (localPdfUrl) {
-    docBtns.push(`<a href="${localPdfUrl}" target="_blank" class="doc-btn doc-pdf-file" title="Download / Open Saved Application Form PDF"><i class="fa-solid fa-file-pdf"></i> PDF Info (File)</a>`);
+    docBtns.push(`<a href="${getViewerUrl('pdf', localPdfUrl)}" target="_blank" class="doc-btn doc-pdf-file" title="Download / Open Saved Application Form PDF"><i class="fa-solid fa-file-pdf"></i> PDF Info (File)</a>`);
   } else {
     docBtns.push(`<span class="doc-btn doc-pdf-file disabled" title="PDF file not downloaded locally"><i class="fa-solid fa-file-pdf"></i> PDF Info (File) <span class="doc-offline-tag">N/A</span></span>`);
   }
@@ -2529,7 +2546,7 @@ function openStudentModal(s) {
 
   // 4. Photo (File)
   if (localPhotoUrl) {
-    docBtns.push(`<a href="${localPhotoUrl}" target="_blank" class="doc-btn doc-photo-file" title="View Saved Student Photo"><i class="fa-solid fa-image"></i> Photo (File)</a>`);
+    docBtns.push(`<a href="${getViewerUrl('photo', localPhotoUrl)}" target="_blank" class="doc-btn doc-photo-file" title="View Saved Student Photo"><i class="fa-solid fa-image"></i> Photo (File)</a>`);
   } else {
     docBtns.push(`<span class="doc-btn doc-photo-file disabled" title="Local photo not found"><i class="fa-solid fa-image"></i> Photo (File) <span class="doc-offline-tag">N/A</span></span>`);
   }
@@ -2566,7 +2583,7 @@ function openStudentModal(s) {
         <button class="dos-act-btn close-btn" id="modalCloseBtn" title="Close"><i class="fa-solid fa-xmark"></i></button>
       </div>
       ${photo ? `
-        <img class="dos-avatar" src="${photo}" alt="${esc(s.student_name_en)}" data-name="${esc(s.student_name_en || '')}" data-roll="${s.short_roll ? ('#' + String(s.short_roll).replace(/^0+/, '') + (getGroupAbbrev(s.group_name) ? ' · ' + getGroupAbbrev(s.group_name) : '')) : (s.college_roll ? ('#' + s.college_roll + (getGroupAbbrev(s.group_name) ? ' · ' + getGroupAbbrev(s.group_name) : '')) : (getGroupAbbrev(s.group_name) || ''))}" onclick="window.open(this.src, '_blank')">
+        <img class="dos-avatar" src="${photo}" alt="${esc(s.student_name_en)}" data-name="${esc(s.student_name_en || '')}" data-roll="${s.short_roll ? ('#' + String(s.short_roll).replace(/^0+/, '') + (getGroupAbbrev(s.group_name) ? ' · ' + getGroupAbbrev(s.group_name) : '')) : (s.college_roll ? ('#' + s.college_roll + (getGroupAbbrev(s.group_name) ? ' · ' + getGroupAbbrev(s.group_name) : '')) : (getGroupAbbrev(s.group_name) || ''))}" onclick="window.open(getViewerUrl('photo', this.src), '_blank')">
       ` : `
         <div class="dos-avatar" style="display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:36px;"><i class="fa-solid fa-user"></i></div>
       `}
@@ -2636,7 +2653,7 @@ function openStudentModal(s) {
   $('modalCloseBtn')?.addEventListener('click', closeModal);
   $('modalFullPageBtn')?.addEventListener('click', toggleFullPage);
   $('modalPdfBtn')?.addEventListener('click', () => {
-    if (localPdfUrl) window.open(localPdfUrl, '_blank');
+    if (localPdfUrl) window.open(getViewerUrl('pdf', localPdfUrl), '_blank');
   });
   $('modalPinBtn')?.addEventListener('click', () => {
     card.classList.toggle('scroll-header');
