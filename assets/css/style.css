@@ -403,8 +403,70 @@ html.dark .college-btn:hover, html.dark .switcher-wrap:hover .college-btn {
 }
 .search-row {
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+.search-cmd-chips {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 6px;
+  padding: 1px 2px;
+}
+.search-cmd-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 2px;
+}
+.search-cmd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  font-family: inherit;
+}
+.search-cmd-chip kbd {
+  font-family: monospace, inherit;
+  font-weight: 700;
+  color: var(--primary);
+  background: rgba(37,99,235,0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  border: 1px solid rgba(37,99,235,0.18);
+}
+.search-cmd-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--surface);
+  transform: translateY(-1px);
+}
+.search-cmd-chip.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(37,99,235,0.25);
+}
+.search-cmd-chip.active kbd {
+  background: rgba(255,255,255,0.22);
+  border-color: rgba(255,255,255,0.4);
+  color: #fff;
 }
 .search-wrap {
   flex: 1;
@@ -1104,10 +1166,8 @@ td {
   z-index: 10;
 }
 .dos-avatar:hover {
-  transform: scale(2.1);
-  z-index: 1000;
-  box-shadow: 0 16px 40px rgba(0,0,0,.75);
-  border-color: #FFFFFF;
+  border-color: var(--accent);
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
 }
 
 .dos-info { flex: 1; min-width: 220px; padding-right: 70px; }
@@ -1163,6 +1223,29 @@ td {
 .comm-btn.whatsapp:hover { background: #1EBE5D; }
 .comm-btn.telegram { background: #229ED9; }
 .comm-btn.telegram:hover { background: #1C87BA; }
+.comm-btn.email { background: #EA4335; color: #FFFFFF; }
+.comm-btn.email:hover { background: #D93025; }
+
+.email-link {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  word-break: break-all;
+  transition: all .15s ease;
+}
+.email-link:hover {
+  text-decoration: underline;
+  color: var(--accent);
+}
+.action-mini-btn.email-send {
+  color: #EA4335;
+}
+.action-mini-btn.email-send:hover {
+  background: rgba(234, 67, 53, 0.12);
+  color: #D93025;
+}
 
 /* Modal Body: Flex 1 and NEVER shrinks flex children */
 .dos-body {
@@ -2280,6 +2363,84 @@ footer {
   color: #FFFFFF;
   border-color: #0EA5E9;
 }
+.action-mini-btn.email-send {
+  color: #3B82F6;
+  border-color: rgba(59, 130, 246, 0.3);
+}
+.action-mini-btn.email-send:hover {
+  background: #3B82F6;
+  color: #FFFFFF;
+  border-color: #3B82F6;
+}
+.email-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+.email-link:hover {
+  text-decoration: underline;
+  color: var(--accent-hover);
+}
+
+/* Modal Hero Communication Buttons */
+.comm-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.comm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  line-height: 1.2;
+}
+.comm-btn.call {
+  background: rgba(2, 132, 199, 0.12);
+  color: #0284C7;
+  border: 1px solid rgba(2, 132, 199, 0.25);
+}
+.comm-btn.call:hover {
+  background: #0284C7;
+  color: #FFFFFF;
+}
+.comm-btn.whatsapp {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.comm-btn.whatsapp:hover {
+  background: #10B981;
+  color: #FFFFFF;
+}
+.comm-btn.telegram {
+  background: rgba(14, 165, 233, 0.12);
+  color: #0EA5E9;
+  border: 1px solid rgba(14, 165, 233, 0.25);
+}
+.comm-btn.telegram:hover {
+  background: #0EA5E9;
+  color: #FFFFFF;
+}
+.comm-btn.email {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3B82F6;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+.comm-btn.email:hover {
+  background: #3B82F6;
+  color: #FFFFFF;
+}
 
 /* ── BDRIS & SSC VERIFICATION BUTTONS (IMAGE 5) ───────────── */
 .btn-bdris {
@@ -2481,6 +2642,10 @@ html.dark .sbadge.fourth {
 .tbl-thumb:hover {
   border-color: var(--accent) !important;
   transform: scale(1.08);
+}
+
+.dos-avatar {
+  cursor: zoom-in !important;
 }
 
 /* Floating High-Resolution Hover Zoom Preview */

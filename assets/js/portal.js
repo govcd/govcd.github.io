@@ -502,6 +502,16 @@ document.addEventListener('click', () => {
   document.querySelectorAll('.switcher-wrap').forEach(w => w.classList.remove('open'));
 });
 
+/* ── FORMAT GPA (2 DECIMAL PLACES: e.g. 5 -> 5.00, 4.98 -> 4.98) ── */
+function formatGpa(gpa) {
+  if (gpa === null || gpa === undefined) return '—';
+  const s = String(gpa).trim();
+  if (!s || s === '—' || s === 'N/A' || s === '0') return '—';
+  const num = parseFloat(s);
+  if (isNaN(num) || num <= 0) return s;
+  return num.toFixed(2);
+}
+
 /* ── SWITCH BATCH ────────────────────────────────────────── */
 async function switchBatch(batch) {
   state.currentBatch = batch;
@@ -514,6 +524,7 @@ async function switchBatch(batch) {
   const data = await fetchBatchData(batch.jsonUrl);
   data.forEach(s => {
     if (s.ssc_board) s.ssc_board = normalizeBoardName(s.ssc_board, s.ssc_gpa);
+    if (s.ssc_gpa) s.ssc_gpa = formatGpa(s.ssc_gpa);
   });
   state.allStudents = data;
   state.filteredStudents = data;
@@ -555,9 +566,11 @@ function setupSearchAndFilters() {
   const secSelect = $('sectionFilter');
 
   if (sInput) {
+    sInput.placeholder = "Search anything, or use #109, /f (family), /p (personal), /a (address), /s (ssc)...";
     let timer = null;
     sInput.addEventListener('input', () => {
       if (clearBtn) clearBtn.style.display = sInput.value ? 'block' : 'none';
+      updateActiveSearchChips(sInput.value);
       clearTimeout(timer);
       timer = setTimeout(() => {
         state.currentPage = 1;
@@ -570,9 +583,49 @@ function setupSearchAndFilters() {
     clearBtn.addEventListener('click', () => {
       sInput.value = '';
       clearBtn.style.display = 'none';
+      updateActiveSearchChips('');
       state.currentPage = 1;
       applyFilters();
       sInput.focus();
+    });
+  }
+
+  // Inject Quick Command Chips below search bar if not present
+  const searchRow = document.querySelector('.search-row');
+  if (searchRow && !$('searchCmdChips')) {
+    const chipsWrap = document.createElement('div');
+    chipsWrap.className = 'search-cmd-chips';
+    chipsWrap.id = 'searchCmdChips';
+    chipsWrap.innerHTML = `
+      <span class="search-cmd-label"><i class="fa-solid fa-bolt"></i> Scoped:</span>
+      <button type="button" class="search-cmd-chip" data-prefix="#" title="Exact roll numbers (e.g. #109, #876)"><kbd>#</kbd> Roll</button>
+      <button type="button" class="search-cmd-chip" data-prefix="/f " title="Family info: Father, Mother, Profession, Income, NID, Phone"><kbd>/f</kbd> Family</button>
+      <button type="button" class="search-cmd-chip" data-prefix="/p " title="Personal info: DOB, NID/BRN, Phone, Blood Group, Religion"><kbd>/p</kbd> Personal</button>
+      <button type="button" class="search-cmd-chip" data-prefix="/a " title="Address: Present, Permanent, District, Local Guardian"><kbd>/a</kbd> Address</button>
+      <button type="button" class="search-cmd-chip" data-prefix="/s " title="SSC & Academic: Roll, Reg, GPA, Board, Subjects"><kbd>/s</kbd> SSC</button>
+    `;
+    searchRow.appendChild(chipsWrap);
+
+    chipsWrap.querySelectorAll('.search-cmd-chip').forEach(chip => {
+      chip.addEventListener('click', e => {
+        e.preventDefault();
+        const prefix = chip.getAttribute('data-prefix');
+        if (!sInput) return;
+        const curVal = sInput.value.trim();
+        if (!curVal) {
+          sInput.value = prefix;
+        } else if (curVal.includes(prefix.trim())) {
+          sInput.focus();
+          return;
+        } else {
+          sInput.value = curVal + ' ' + prefix;
+        }
+        if (clearBtn) clearBtn.style.display = 'block';
+        updateActiveSearchChips(sInput.value);
+        sInput.focus();
+        state.currentPage = 1;
+        applyFilters();
+      });
     });
   }
 
@@ -985,24 +1038,217 @@ function matchStudentFilters(s, f) {
   return true;
 }
 
+/* ── ADVANCED SEARCH ENGINE (Multi-Command Scoped Parser & Exact Roll Engine) ── */
+function parseSearchQuery(rawQ) {
+  if (!rawQ) return null;
+  const q = rawQ.trim();
+  if (!q) return null;
+
+  const constraints = {};
+
+  // 1. Exact roll numbers from #
+  let hashRolls = [];
+  if (q.startsWith('#')) {
+    const prefixPart = q.split(/\s+\/(?=[fpas])/i)[0];
+    hashRolls = prefixPart.match(/\d+/g) || [];
+  } else {
+    hashRolls = [...q.matchAll(/#\s*(\d+)/g)].map(m => m[1]);
+  }
+  if (hashRolls.length > 0) {
+    constraints.rolls = hashRolls.map(r => parseInt(r, 10)).filter(n => !isNaN(n));
+  }
+
+  // 2. Extract slash commands (/f, /p, /a, /s)
+  const cmdRegex = /\/(f(?:amily)?|p(?:ersonal)?|a(?:ddress|ddr)?|s(?:sc|academic)?)(?:\s+|$)(.*?)(?=(?:\/(?:f|family|p|personal|a|addr|address|s|ssc|academic)(?:\s+|$)|$))/gi;
+  let match;
+  while ((match = cmdRegex.exec(q)) !== null) {
+    const key = match[1].toLowerCase()[0]; // 'f', 'p', 'a', 's'
+    let term = (match[2] || '').trim();
+    term = term.replace(/#\s*\d+/g, '').replace(/^[,;\s]+|[,;\s]+$/g, '').trim();
+    if (term) {
+      constraints[key] = term.toLowerCase();
+    } else {
+      constraints[key] = ''; // prefix entered without argument yet
+    }
+  }
+
+  // 3. Fallback: if no slash commands and no hash rolls found
+  if (Object.keys(constraints).length === 0) {
+    constraints.general = q.toLowerCase();
+  }
+
+  return constraints;
+}
+
+function matchSearchQuery(s, rawQ) {
+  if (!rawQ) return true;
+  const c = parseSearchQuery(rawQ);
+  if (!c) return true;
+
+  // 1. Exact roll numbers check
+  if (c.rolls && c.rolls.length > 0) {
+    const sShort = parseInt(s.short_roll, 10);
+    const sCollege = parseInt(s.college_roll, 10);
+    const sAdm = parseInt(s.admission_roll, 10);
+
+    const matchRoll = c.rolls.some(t => {
+      if (!isNaN(sShort) && sShort === t) return true;
+      if (s.short_roll && (s.short_roll === String(t) || s.short_roll === String(t).padStart(4, '0'))) return true;
+      if (!isNaN(sAdm) && sAdm === t) return true;
+      if (!isNaN(sCollege) && sCollege === t) return true;
+      return false;
+    });
+    if (!matchRoll) return false;
+  }
+
+  // 2. Family constraint (/f)
+  if (c.f !== undefined && c.f !== '') {
+    const term = c.f;
+    const annual = s.father_annual_income ? String(s.father_annual_income).trim() : '';
+    const annualNum = Number(annual);
+    const monthly = (!isNaN(annualNum) && annualNum > 0) ? String(Math.round(annualNum / 12)) : '';
+
+    const matchF = (s.father_name_en || '').toLowerCase().includes(term) ||
+                   (s.father_name_bn || '').toLowerCase().includes(term) ||
+                   (s.father_occupation || '').toLowerCase().includes(term) ||
+                   (s.father_phone || '').includes(term) ||
+                   (s.father_nid || '').includes(term) ||
+                   annual.includes(term) ||
+                   monthly.includes(term) ||
+                   (s.mother_name_en || '').toLowerCase().includes(term) ||
+                   (s.mother_name_bn || '').toLowerCase().includes(term) ||
+                   (s.mother_occupation || '').toLowerCase().includes(term) ||
+                   (s.mother_phone || '').includes(term) ||
+                   (s.mother_nid || '').includes(term) ||
+                   (s.local_guardian || '').toLowerCase().includes(term);
+    if (!matchF) return false;
+  }
+
+  // 3. Personal constraint (/p)
+  if (c.p !== undefined && c.p !== '') {
+    const term = c.p;
+    const matchP = (s.student_name_en || '').toLowerCase().includes(term) ||
+                   (s.student_name_bn || '').toLowerCase().includes(term) ||
+                   (s.date_of_birth || '').toLowerCase().includes(term) ||
+                   (s.nid_birth_reg || '').includes(term) ||
+                   (s.student_phone || '').includes(term) ||
+                   (s.student_email || '').toLowerCase().includes(term) ||
+                   (s.gender || '').toLowerCase().includes(term) ||
+                   (s.blood_group || '').toLowerCase().includes(term) ||
+                   (s.religion || '').toLowerCase().includes(term) ||
+                   (s.quota || '').toLowerCase().includes(term) ||
+                   (s.nationality || '').toLowerCase().includes(term);
+    if (!matchP) return false;
+  }
+
+  // 4. Address constraint (/a)
+  if (c.a !== undefined && c.a !== '') {
+    const term = c.a;
+    const matchA = (s.present_address || '').toLowerCase().includes(term) ||
+                   (s.present_district || '').toLowerCase().includes(term) ||
+                   (s.permanent_address || '').toLowerCase().includes(term) ||
+                   (s.permanent_district || '').toLowerCase().includes(term) ||
+                   (s.local_guardian || '').toLowerCase().includes(term);
+    if (!matchA) return false;
+  }
+
+  // 5. SSC constraint (/s)
+  if (c.s !== undefined && c.s !== '') {
+    const term = c.s;
+    const gpaFormatted = formatGpa(s.ssc_gpa);
+    const matchS = (s.ssc_roll || '').includes(term) ||
+                   (s.ssc_reg || '').includes(term) ||
+                   (s.ssc_gpa || '').includes(term) ||
+                   gpaFormatted.includes(term) ||
+                   (s.ssc_board || '').toLowerCase().includes(term) ||
+                   (s.ssc_year || '').includes(term) ||
+                   (s.group_name || '').toLowerCase().includes(term) ||
+                   (s.section || '').toLowerCase().includes(term) ||
+                   (s.practical_group || '').toLowerCase().includes(term) ||
+                   (s.fourth_subject || '').toLowerCase().includes(term) ||
+                   (s.elective_subjects || '').toLowerCase().includes(term) ||
+                   (s.all_subjects || '').toLowerCase().includes(term) ||
+                   (s.college_roll || '').includes(term) ||
+                   (s.admission_roll || '').includes(term);
+    if (!matchS) return false;
+  }
+
+  // 6. General constraint (no slash commands, no #)
+  if (c.general !== undefined) {
+    const term = c.general;
+    const annual = s.father_annual_income ? String(s.father_annual_income).trim() : '';
+    const gpaFormatted = formatGpa(s.ssc_gpa);
+    const matchGen = (s.student_name_en || '').toLowerCase().includes(term) ||
+                     (s.student_name_bn || '').toLowerCase().includes(term) ||
+                     (s.short_roll || '').includes(term) ||
+                     (s.college_roll || '').includes(term) ||
+                     (s.admission_roll || '').includes(term) ||
+                     (s.section || '').toLowerCase().includes(term) ||
+                     (s.student_phone || '').includes(term) ||
+                     (s.father_name_en || '').toLowerCase().includes(term) ||
+                     (s.father_name_bn || '').toLowerCase().includes(term) ||
+                     (s.father_occupation || '').toLowerCase().includes(term) ||
+                     (s.father_phone || '').includes(term) ||
+                     (s.father_nid || '').includes(term) ||
+                     (s.mother_name_en || '').toLowerCase().includes(term) ||
+                     (s.mother_name_bn || '').toLowerCase().includes(term) ||
+                     (s.mother_occupation || '').toLowerCase().includes(term) ||
+                     (s.mother_phone || '').includes(term) ||
+                     (s.mother_nid || '').includes(term) ||
+                     (s.nid_birth_reg || '').includes(term) ||
+                     (s.date_of_birth || '').toLowerCase().includes(term) ||
+                     (s.present_address || '').toLowerCase().includes(term) ||
+                     (s.present_district || '').toLowerCase().includes(term) ||
+                     (s.permanent_address || '').toLowerCase().includes(term) ||
+                     (s.permanent_district || '').toLowerCase().includes(term) ||
+                     (s.local_guardian || '').toLowerCase().includes(term) ||
+                     (s.ssc_roll || '').includes(term) ||
+                     (s.ssc_reg || '').includes(term) ||
+                     (s.ssc_board || '').toLowerCase().includes(term) ||
+                     (s.student_email || '').toLowerCase().includes(term) ||
+                     (s.fourth_subject || '').toLowerCase().includes(term) ||
+                     (s.elective_subjects || '').toLowerCase().includes(term) ||
+                     gpaFormatted.includes(term) ||
+                     annual.includes(term);
+    if (!matchGen) return false;
+  }
+
+  return true;
+}
+
+function updateActiveSearchChips(rawQ) {
+  const c = parseSearchQuery(rawQ);
+  const chips = document.querySelectorAll('.search-cmd-chip');
+  if (!chips || chips.length === 0) return;
+
+  chips.forEach(chip => {
+    const prefix = chip.getAttribute('data-prefix').trim();
+    let isActive = false;
+    if (!c) {
+      isActive = false;
+    } else if (prefix === '#') {
+      isActive = Boolean(c.rolls && c.rolls.length > 0) || (rawQ || '').includes('#');
+    } else if (prefix === '/f') {
+      isActive = c.f !== undefined;
+    } else if (prefix === '/p') {
+      isActive = c.p !== undefined;
+    } else if (prefix === '/a') {
+      isActive = c.a !== undefined;
+    } else if (prefix === '/s') {
+      isActive = c.s !== undefined;
+    }
+    chip.classList.toggle('active', isActive);
+  });
+}
+
 function applyFilters() {
-  const q = ($('searchInput')?.value || '').toLowerCase().trim();
+  const rawQ = $('searchInput')?.value || '';
+  updateActiveSearchChips(rawQ);
 
   state.filteredStudents = state.allStudents.filter(s => {
     if (!matchStudentFilters(s, state.filters)) return false;
-    if (!q) return true;
-
-    return (s.student_name_en || '').toLowerCase().includes(q) ||
-           (s.student_name_bn || '').toLowerCase().includes(q) ||
-           (s.short_roll || '').includes(q) ||
-           (s.college_roll || '').includes(q) ||
-           (s.admission_roll || '').includes(q) ||
-           (s.section || '').toLowerCase().includes(q) ||
-           (s.student_phone || '').includes(q) ||
-           (s.father_name_en || '').toLowerCase().includes(q) ||
-           (s.father_phone || '').includes(q) ||
-           (s.ssc_roll || '').includes(q) ||
-           (s.ssc_reg || '').includes(q);
+    if (!matchSearchQuery(s, rawQ)) return false;
+    return true;
   });
 
   // Table Sorting (Ascending / Descending)
@@ -1096,9 +1342,37 @@ function updateActiveFilterChips() {
     active.push({ key: 'incomeRange', label: `Income: ${minTxt} – ${maxTxt}` });
   }
 
+  // Multi-Command Search Active Chips
+  const sInput = $('searchInput');
+  const qVal = (sInput?.value || '').trim();
+  if (qVal) {
+    const c = parseSearchQuery(qVal);
+    if (c) {
+      if (c.rolls && c.rolls.length > 0) {
+        active.push({ key: 'search_rolls', label: `🏷️ Roll: ${c.rolls.map(r => '#' + r).join(', ')}` });
+      }
+      if (c.f !== undefined) {
+        active.push({ key: 'search_f', label: `👨‍👩‍👧 Family: ${c.f || 'All'}` });
+      }
+      if (c.p !== undefined) {
+        active.push({ key: 'search_p', label: `👤 Personal: ${c.p || 'All'}` });
+      }
+      if (c.a !== undefined) {
+        active.push({ key: 'search_a', label: `📍 Address: ${c.a || 'All'}` });
+      }
+      if (c.s !== undefined) {
+        active.push({ key: 'search_s', label: `🎓 SSC: ${c.s || 'All'}` });
+      }
+      if (c.general !== undefined) {
+        active.push({ key: 'search_general', label: `🔍 "${c.general}"` });
+      }
+    }
+  }
+
   if (badge) {
-    if (active.length > 0) {
-      badge.textContent = active.length;
+    const modalFilterCount = active.filter(a => !a.key.startsWith('search_')).length;
+    if (modalFilterCount > 0) {
+      badge.textContent = modalFilterCount;
       badge.style.display = 'inline-block';
       triggerBtn?.classList.add('has-active');
     } else {
@@ -1127,7 +1401,29 @@ function updateActiveFilterChips() {
 }
 
 function removeFilter(key) {
-  if (key === 'bookmarkedOnly') {
+  if (key.startsWith('search_')) {
+    const sInput = $('searchInput');
+    const clearBtn = $('clearSearchBtn');
+    if (sInput) {
+      let q = sInput.value;
+      if (key === 'search_f') {
+        q = q.replace(/\/(?:f|family)(?:\s+[^/]*|$)/i, '');
+      } else if (key === 'search_a') {
+        q = q.replace(/\/(?:a|addr|address)(?:\s+[^/]*|$)/i, '');
+      } else if (key === 'search_p') {
+        q = q.replace(/\/(?:p|personal)(?:\s+[^/]*|$)/i, '');
+      } else if (key === 'search_s') {
+        q = q.replace(/\/(?:s|ssc|academic)(?:\s+[^/]*|$)/i, '');
+      } else if (key === 'search_rolls') {
+        q = q.replace(/#\s*\d+([,\s]*#\s*\d+)*/g, '');
+      } else if (key === 'search_general') {
+        q = '';
+      }
+      sInput.value = q.replace(/\s+/g, ' ').trim();
+      if (!sInput.value && clearBtn) clearBtn.style.display = 'none';
+      updateActiveSearchChips(sInput.value);
+    }
+  } else if (key === 'bookmarkedOnly') {
     state.filters.bookmarkedOnly = false;
     const bmFilterBtn = $('filterBookmarksBtn');
     if (bmFilterBtn) bmFilterBtn.classList.remove('active');
@@ -1161,6 +1457,11 @@ function removeFilter(key) {
 window.removeFilter = removeFilter;
 
 function clearAllActiveFilters() {
+  const sInput = $('searchInput');
+  const clearBtn = $('clearSearchBtn');
+  if (sInput) sInput.value = '';
+  if (clearBtn) clearBtn.style.display = 'none';
+  updateActiveSearchChips('');
   resetAllFilters();
 }
 window.clearAllActiveFilters = clearAllActiveFilters;
@@ -1249,38 +1550,87 @@ function getSectionBadgeInfo(s) {
   return { text: 'SCI', cls: '' };
 }
 
-/* ── CLEAN SUBJECT NORMALIZER (TASK 4) ─────────────────────── */
+/* ── CLEAN SUBJECT NORMALIZER ─────────────────────── */
 function cleanSubjectName(str) {
   if (!str || str === '—' || str === 'N/A') return '—';
   const l = str.toLowerCase();
-  if (l.includes('physics')) return 'Physics';
-  if (l.includes('chemistry')) return 'Chemistry';
+  if (l.includes('physics') || l.includes('পদার্থ')) return 'Physics';
+  if (l.includes('chemistry') || l.includes('রসায়ন')) return 'Chemistry';
   if (l.includes('higher math') || l.includes('উচ্চতর')) return 'Higher Math';
   if (l.includes('biology') || l.includes('জীববিজ্ঞান')) return 'Biology';
   if (l.includes('bangla') || l.includes('বাংলা')) return 'Bangla';
   if (l.includes('english') || l.includes('ইংরেজি')) return 'English';
-  if (l.includes('ict') || l.includes('information and comm')) return 'ICT';
+  if (l.includes('ict') || l.includes('information') || l.includes('তথ্য')) return 'ICT';
   if (l.includes('statistics') || l.includes('পরিসংখ্যান')) return 'Statistics';
   if (l.includes('economics') || l.includes('অর্থনীতি')) return 'Economics';
   if (l.includes('accounting') || l.includes('হিসাববিজ্ঞান')) return 'Accounting';
   if (l.includes('finance') || l.includes('ব্যাংকিং')) return 'Finance & Banking';
-  if (l.includes('management') || l.includes('business org') || l.includes('ব্যবস্থাপনা')) return 'Management';
-  if (l.includes('marketing') || l.includes('বিপণন')) return 'Marketing';
-  if (l.includes('civics') || l.includes('পৌরনীতি')) return 'Civics';
+  if (l.includes('management') || l.includes('business org') || l.includes('ব্যবস্থাপনা') || l.includes('babosai songotthon') || (l.includes('babosthapona') && !l.includes('utpa') && !l.includes('biponon'))) return 'Business Organization & Management';
+  if (l.includes('marketing') || l.includes('বিপণন') || l.includes('utpadon') || l.includes('utpa.') || l.includes('biponon')) return 'Production Management & Marketing';
+  if (l.includes('civics') || l.includes('পৌরনীতি')) return 'Civics & Good Governance';
   if (l.includes('sociology') || l.includes('সমাজবিজ্ঞান')) return 'Sociology';
   if (l.includes('social work') || l.includes('সমাজকর্ম')) return 'Social Work';
+  if (l.includes('social science') || l.includes('সমাজবিজ্ঞান')) return 'Social Science';
   if (l.includes('logic') || l.includes('যুক্তিবিদ্যা')) return 'Logic';
   if (l.includes('geography') || l.includes('ভূগোল')) return 'Geography';
   if (l.includes('psychology') || l.includes('মনোবিজ্ঞান')) return 'Psychology';
-  if (l.includes('islamic history') || l.includes('ইসলামের ইতিহাস')) return 'Islamic History';
-  if (l.includes('islamic studies') || l.includes('ইসলাম শিক্ষা')) return 'Islamic Studies';
+  if (l.includes('islamic history') || l.includes('ইসলামের ইতিহাস')) return 'Islamic History & Culture';
+  if (l.includes('islamic studies') || l.includes('ইসলাম শিক্ষা') || l.includes('islam shikha') || l.includes('study of islam')) return 'Islamic Studies';
   if (l.includes('agriculture') || l.includes('কৃষি')) return 'Agriculture';
   if (l.includes('home science') || l.includes('গার্হস্থ্য')) return 'Home Science';
-  return str.replace(/^\d+\s*-\s*/, '').replace(/\b(1st|2nd)\s+paper\b/gi, '').replace(/\s*\/\s*\d+.*$/, '').replace(/mandatory|elective|fourth/gi, '').trim();
+  if (l.includes('arabic') || l.includes('আরবি')) return 'Arabic';
+  if (l.includes('pali') || l.includes('পালি')) return 'Pali';
+  if (l.includes('history') || l.includes('ইতিহাস')) return 'History';
+
+  // Fallback cleaner for custom/rare subject names:
+  // 1. Remove classification tags: (Mandatory), (Elective), (Fourth), etc.
+  let t = str.replace(/\(?\b(mandatory|elective|fourth|4th)\b\)?/gi, '');
+  // 2. Cut off 2nd paper if separated by slash / or code pattern like 278 -
+  t = t.split(/\s*\/\s*|\s+\d{2,4}\s*-\s*/)[0];
+  // 3. Remove leading course code
+  t = t.replace(/^\d+\s*-\s*/, '');
+  // 4. Remove paper references like 1st paper, 2nd paper, 1st, 2nd, paper
+  t = t.replace(/\b(1st|2nd|first|second)\s*(paper|part)?\b/gi, '');
+  t = t.replace(/\s+/g, ' ').replace(/^[-/,\s]+|[-/,\s]+$/g, '').trim();
+  return t || str;
 }
 
 function cleanSubjectLabel(txt) {
   return cleanSubjectName(txt);
+}
+
+function getStudentElectiveSubject(s) {
+  if (s.elective_subjects && s.elective_subjects !== '—' && s.elective_subjects !== 'N/A') {
+    const el = cleanSubjectLabel(s.elective_subjects);
+    if (el && el !== '—') return el;
+  }
+  if (s.all_subjects) {
+    const parts = s.all_subjects.split(';');
+    for (const p of parts) {
+      if (/elective/i.test(p) && !/fourth|4th/i.test(p)) {
+        const name = cleanSubjectName(p);
+        if (name && name !== '—') return name;
+      }
+    }
+  }
+  return '—';
+}
+
+function getStudentFourthSubject(s) {
+  if (s.fourth_subject && s.fourth_subject !== '—' && s.fourth_subject !== 'N/A') {
+    const f4 = cleanSubjectLabel(s.fourth_subject);
+    if (f4 && f4 !== '—') return f4;
+  }
+  if (s.all_subjects) {
+    const parts = s.all_subjects.split(';');
+    for (const p of parts) {
+      if (/fourth|4th/i.test(p)) {
+        const name = cleanSubjectName(p);
+        if (name && name !== '—') return name;
+      }
+    }
+  }
+  return '—';
 }
 
 /* ── SSC BOARD NORMALIZER ─────────────────────────────────── */
@@ -1545,7 +1895,8 @@ function renderDetailedCards(students, container) {
         const tg = rawPhone.length >= 10 ? (rawPhone.startsWith('88') ? rawPhone : ('88' + rawPhone.replace(/^0/, ''))) : '';
 
         const districtStr = s.permanent_district || s.present_district || '—';
-        const boardGpaStr = (s.ssc_board || '—') + (s.ssc_gpa ? ` • <strong style="color:var(--success);">${s.ssc_gpa}</strong>` : '');
+        const formattedGpa = formatGpa(s.ssc_gpa);
+        const boardGpaStr = (s.ssc_board || '—') + (formattedGpa !== '—' ? ` • <strong style="color:var(--success);">${formattedGpa}</strong>` : '');
         const electiveStr = cleanSubjectLabel(s.elective_subjects);
         const fourthStr = cleanSubjectLabel(s.fourth_subject);
 
@@ -1701,45 +2052,63 @@ function renderTableView(students, container) {
             <!-- Group Category Banners -->
             <tr class="tbl-group-hdr-row">
               <th colspan="3" class="tbl-group-hdr grp-sticky"><i class="fa-solid fa-id-badge"></i> Student Identity</th>
-              <th colspan="4" class="tbl-group-hdr grp-personal col-group-start"><i class="fa-solid fa-user"></i> Personal Information</th>
-              <th colspan="7" class="tbl-group-hdr grp-academic col-group-start"><i class="fa-solid fa-graduation-cap"></i> Academic (SSC &amp; College)</th>
-              <th colspan="4" class="tbl-group-hdr grp-father col-group-start"><i class="fa-solid fa-user-tie"></i> Father's Information</th>
-              <th colspan="3" class="tbl-group-hdr grp-mother col-group-start"><i class="fa-solid fa-person-dress"></i> Mother's Information</th>
+              <th colspan="7" class="tbl-group-hdr grp-personal col-group-start"><i class="fa-solid fa-user"></i> Personal Information</th>
+              <th colspan="9" class="tbl-group-hdr grp-academic col-group-start"><i class="fa-solid fa-graduation-cap"></i> Academic &amp; Subjects</th>
+              <th colspan="6" class="tbl-group-hdr grp-father col-group-start"><i class="fa-solid fa-user-tie"></i> Father's Information</th>
+              <th colspan="4" class="tbl-group-hdr grp-mother col-group-start"><i class="fa-solid fa-person-dress"></i> Mother's Information</th>
               <th colspan="4" class="tbl-group-hdr grp-address col-group-start"><i class="fa-solid fa-map-location-dot"></i> Address &amp; District</th>
-              <th colspan="3" class="tbl-group-hdr grp-address col-group-start" style="background:#312E81 !important;color:#C7D2FE !important;border-top:3px solid #6366F1;"><i class="fa-solid fa-book-bookmark"></i> Subjects &amp; Quota</th>
-              <th colspan="3" class="tbl-group-hdr grp-payment col-group-start"><i class="fa-solid fa-receipt"></i> Payment &amp; Dossier</th>
+              <th colspan="4" class="tbl-group-hdr grp-payment col-group-start"><i class="fa-solid fa-receipt"></i> Quota &amp; Payment Dossier</th>
             </tr>
             <!-- Individual Column Headers -->
             <tr>
+              <!-- Identity (3) -->
               <th class="sticky-col-idx" style="width:46px;text-align:center;">#</th>
               <th class="sticky-col-photo" style="width:52px;text-align:center;">Photo</th>
               ${renderSortTh('Student Name (EN)', 'student_name_en', 'sticky-col-name')}
+
+              <!-- Personal (7) -->
               <th class="col-group-start">Name (BN)</th>
+              <th>Date of Birth</th>
               <th>Gender</th>
               <th>Blood</th>
               <th>Religion</th>
+              <th>Birth Reg / NID</th>
+              <th>Student Mobile</th>
+
+              <!-- Academic & Subjects (9) -->
               ${renderSortTh('College Roll', 'college_roll', 'col-group-start')}
               ${renderSortTh('Adm Roll', 'admission_roll')}
               <th>Group</th>
               <th>Section</th>
+              <th>Elective Subject</th>
+              <th>4th Subject</th>
               ${renderSortTh('SSC GPA', 'ssc_gpa')}
               <th>SSC Board</th>
               ${renderSortTh('SSC Year', 'ssc_year')}
+
+              <!-- Father (6) -->
               <th class="col-group-start">Father Name (EN)</th>
+              <th>Father Occupation</th>
               ${renderSortTh("Monthly Income", 'monthly_income')}
               ${renderSortTh("Annual Income", 'annual_income')}
-              <th>Father Phone</th>
+              <th>Father Mobile</th>
+              <th>Father NID</th>
+
+              <!-- Mother (4) -->
               <th class="col-group-start">Mother Name (EN)</th>
-              <th>Mother Phone</th>
+              <th>Mother Mobile</th>
               <th>Mother Occ.</th>
+              <th>Mother NID</th>
+
+              <!-- Address (4) -->
               <th class="col-group-start">Present Address</th>
               <th>Present Zila</th>
               <th>Permanent Address</th>
               <th>Permanent Zila</th>
-              <th class="col-group-start">Elective Subject</th>
-              <th>4th Subject</th>
-              <th>Quota</th>
-              <th class="col-group-start">Payment Date</th>
+
+              <!-- Quota & Payment (4) -->
+              <th class="col-group-start">Quota</th>
+              <th>Payment Date</th>
               <th>Transaction No</th>
               <th style="text-align:center;">Actions</th>
             </tr>
@@ -1756,8 +2125,12 @@ function renderTableView(students, container) {
                 incAnnualStr = '৳' + ann.toLocaleString();
                 incMonthlyStr = '৳' + Math.round(ann / 12).toLocaleString();
               }
+              const elSub = getStudentElectiveSubject(s);
+              const f4Sub = getStudentFourthSubject(s);
+
               return `
                 <tr data-idx="${idx}">
+                  <!-- Identity (3) -->
                   <td class="sticky-col-idx" style="text-align:center;font-weight:700;color:var(--text-muted);">${rollNum}</td>
                   <td class="sticky-col-photo" style="text-align:center;">
                     ${photo ? `
@@ -1767,32 +2140,50 @@ function renderTableView(students, container) {
                     `}
                   </td>
                   <td class="sticky-col-name"><strong>${esc(s.student_name_en || 'Unknown')}</strong></td>
+
+                  <!-- Personal (7) -->
                   <td class="bn-text col-group-start">${esc(s.student_name_bn || '—')}</td>
+                  <td style="white-space:nowrap;font-size:12px;">${s.date_of_birth || '—'}</td>
                   <td>${s.gender || '—'}</td>
                   <td><strong>${s.blood_group || '—'}</strong></td>
                   <td>${s.religion || '—'}</td>
+                  <td style="font-family:monospace;font-size:11.5px;font-weight:600;letter-spacing:0.3px;">${s.nid_birth_reg || '—'}</td>
+                  <td style="font-family:monospace;">${s.student_phone || '—'}</td>
+
+                  <!-- Academic & Subjects (9) -->
                   <td class="col-group-start" style="font-family:monospace;font-weight:600;color:var(--accent);">${s.college_roll || '—'}</td>
                   <td style="font-family:monospace;font-weight:700;color:var(--primary);">${s.admission_roll || '—'}</td>
                   <td><span class="badge badge-grp">${s.group_name || '—'}</span></td>
                   <td>${(state.collegeCode === 'dc' && s.section && !/science/i.test(s.section)) ? `<span class="badge badge-sec">${s.section}</span>` : (s.section || '—')}</td>
-                  <td><strong style="color:var(--success);">${s.ssc_gpa || '—'}</strong></td>
+                  <td><span style="color:var(--primary);font-weight:600;font-size:12px;">${esc(elSub)}</span></td>
+                  <td><span style="color:var(--accent);font-weight:600;font-size:12px;">${esc(f4Sub)}</span></td>
+                  <td><strong style="color:var(--success);">${formatGpa(s.ssc_gpa)}</strong></td>
                   <td>${s.ssc_board || '—'}</td>
                   <td>${s.ssc_year || '—'}</td>
+
+                  <!-- Father (6) -->
                   <td class="col-group-start">${esc(s.father_name_en || '—')}</td>
+                  <td style="font-weight:600;color:var(--text);">${esc(s.father_occupation || '—')}</td>
                   <td style="color:var(--success);font-weight:700;font-family:monospace;">${incMonthlyStr}</td>
                   <td style="color:var(--text-muted);font-size:12px;font-family:monospace;">${incAnnualStr}</td>
                   <td style="font-family:monospace;">${s.father_phone || '—'}</td>
+                  <td style="font-family:monospace;font-size:11.5px;color:var(--text-muted);">${s.father_nid || '—'}</td>
+
+                  <!-- Mother (4) -->
                   <td class="col-group-start">${esc(s.mother_name_en || '—')}</td>
                   <td style="font-family:monospace;">${s.mother_phone || '—'}</td>
                   <td>${esc(s.mother_occupation || '—')}</td>
-                  <td class="col-group-start" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(s.present_address)}">${esc(s.present_address || '—')}</td>
+                  <td style="font-family:monospace;font-size:11.5px;color:var(--text-muted);">${s.mother_nid || '—'}</td>
+
+                  <!-- Address & District (4) -->
+                  <td class="col-group-start" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(s.present_address)}">${esc(s.present_address || '—')}</td>
                   <td>${s.present_district || '—'}</td>
-                  <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(s.permanent_address)}">${esc(s.permanent_address || '—')}</td>
+                  <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(s.permanent_address)}">${esc(s.permanent_address || '—')}</td>
                   <td>${s.permanent_district || '—'}</td>
-                  <td class="col-group-start">${cleanSubjectLabel(s.elective_subjects)}</td>
-                  <td>${cleanSubjectLabel(s.fourth_subject)}</td>
-                  <td>${cleanQuotaLabel(s.quota)}</td>
-                  <td class="col-group-start">${s.payment_date || '—'}</td>
+
+                  <!-- Quota & Payment (4) -->
+                  <td class="col-group-start">${cleanQuotaLabel(s.quota)}</td>
+                  <td>${s.payment_date || '—'}</td>
                   <td style="font-family:monospace;">${s.transaction_no || '—'}</td>
                   <td onclick="event.stopPropagation()" style="text-align:center;white-space:nowrap;">
                     ${localPdf ? `<a href="${localPdf}" target="_blank" style="color:var(--danger);font-size:14px;margin-right:6px;" title="Open Downloaded Application PDF"><i class="fa-solid fa-file-pdf"></i></a>` : ''}
@@ -1932,21 +2323,6 @@ function openStudentModal(s) {
   const photo = getStudentPhotoPath(s);
   const admRoll = s.admission_roll || '—';
 
-  // Communication buttons
-  let commHtml = '';
-  if (s.student_phone && s.student_phone !== '—') {
-    const raw = s.student_phone.replace(/[^0-9]/g, '');
-    if (raw.length >= 10) {
-      const intl = raw.startsWith('88') ? raw : ('88' + raw.replace(/^0/, ''));
-      commHtml = `
-        <div class="comm-buttons">
-          <a href="tel:${raw}" class="comm-btn call"><i class="fa-solid fa-phone"></i> Call</a>
-          <a href="https://wa.me/${intl}" target="_blank" class="comm-btn whatsapp"><i class="fa-brands fa-whatsapp"></i> WhatsApp</a>
-          <a href="https://t.me/+${intl}" target="_blank" class="comm-btn telegram"><i class="fa-brands fa-telegram"></i> Telegram</a>
-        </div>
-      `;
-    }
-  }
 
   // Section 1: Student Information
   const studentItems = [
@@ -1997,7 +2373,7 @@ function openStudentModal(s) {
   const academicItems = [
     infoItem('SSC Roll', s.ssc_roll, true),
     infoItem('SSC Registration', s.ssc_reg, true),
-    infoItem('SSC GPA', s.ssc_gpa),
+    infoItem('SSC GPA', formatGpa(s.ssc_gpa)),
     infoItem('SSC Board', s.ssc_board),
     infoItem('Passing Year', s.ssc_year),
     infoItem('4th Subject', cleanSubjectLabel(s.fourth_subject)),
@@ -2162,7 +2538,7 @@ function openStudentModal(s) {
         <button class="dos-act-btn close-btn" id="modalCloseBtn" title="Close"><i class="fa-solid fa-xmark"></i></button>
       </div>
       ${photo ? `
-        <img class="dos-avatar" src="${photo}" alt="${esc(s.student_name_en)}" onclick="window.open(this.src, '_blank')" title="Click to view original full photo">
+        <img class="dos-avatar" src="${photo}" alt="${esc(s.student_name_en)}" data-name="${esc(s.student_name_en || '')}" data-roll="${s.short_roll ? ('Roll #' + String(s.short_roll).replace(/^0+/, '')) : (s.college_roll ? ('Roll ' + s.college_roll) : '')}" onclick="window.open(this.src, '_blank')">
       ` : `
         <div class="dos-avatar" style="display:flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:36px;"><i class="fa-solid fa-user"></i></div>
       `}
@@ -2259,6 +2635,7 @@ function infoItem(label, val, allowCopy, studentContext) {
   const isPhone = /phone|mobile/i.test(label);
   const isBirthReg = /^birth reg/i.test(label);
   const isDob = /date of birth|dob/i.test(label);
+  const isEmail = /email/i.test(label);
 
   let actionsHtml = '';
   let valueContent = esc(cleanVal);
@@ -2292,6 +2669,9 @@ function infoItem(label, val, allowCopy, studentContext) {
         <i class="fa-solid fa-shield-halved"></i> BDRIS
       </button>
     `;
+  } else if (isEmail) {
+    valueContent = `<a href="mailto:${cleanVal}" class="email-link" title="Click to send email to ${cleanVal}"><i class="fa-solid fa-envelope" style="margin-right:6px;font-size:12px;"></i>${esc(cleanVal)}</a>`;
+    actionsHtml = `<button class="action-mini-btn copy" onclick="copyText('${cleanVal}', this)" title="Copy Email Address"><i class="fa-regular fa-copy"></i></button>`;
   } else if (allowCopy) {
     actionsHtml = `
       <button class="action-mini-btn copy" onclick="copyText('${cleanVal}', this)" title="Copy ${label}">
@@ -2416,15 +2796,21 @@ function initPhotoHoverZoom() {
     }
 
     // Retrieve student name and roll if available
-    const cardOrRow = target.closest('[data-idx]');
     let studentName = '';
     let rollStr = '';
-    if (cardOrRow && cardOrRow.dataset.idx !== undefined) {
-      const idx = parseInt(cardOrRow.dataset.idx, 10);
-      const s = state.filteredStudents[idx];
-      if (s) {
-        studentName = s.student_name_en || '';
-        rollStr = s.short_roll ? `Roll #${s.short_roll}` : (s.college_roll ? `Roll: ${s.college_roll}` : '');
+
+    if (target.classList.contains('dos-avatar')) {
+      studentName = target.dataset.name || $('dossierCard')?.querySelector('.dos-info h2')?.textContent?.trim() || '';
+      rollStr = target.dataset.roll || '';
+    } else {
+      const cardOrRow = target.closest('[data-idx]');
+      if (cardOrRow && cardOrRow.dataset.idx !== undefined) {
+        const idx = parseInt(cardOrRow.dataset.idx, 10);
+        const s = state.filteredStudents[idx];
+        if (s) {
+          studentName = s.student_name_en || '';
+          rollStr = s.short_roll ? `Roll #${s.short_roll}` : (s.college_roll ? `Roll: ${s.college_roll}` : '');
+        }
       }
     }
 
@@ -2467,14 +2853,14 @@ function initPhotoHoverZoom() {
 
   // Delegated mouseover/mouseout across document
   document.body.addEventListener('mouseover', (e) => {
-    const target = e.target.closest('.tbl-thumb, .compact-photo, .card-av, .photo-card img, .photo-card .img-wrap img');
+    const target = e.target.closest('.tbl-thumb, .compact-photo, .card-av, .photo-card img, .photo-card .img-wrap img, .dos-avatar');
     if (target) {
       showPreview(target);
     }
   });
 
   document.body.addEventListener('mouseout', (e) => {
-    const target = e.target.closest('.tbl-thumb, .compact-photo, .card-av, .photo-card img, .photo-card .img-wrap img');
+    const target = e.target.closest('.tbl-thumb, .compact-photo, .card-av, .photo-card img, .photo-card .img-wrap img, .dos-avatar');
     if (target) {
       if (e.relatedTarget && target.contains(e.relatedTarget)) return;
       hidePreview();
