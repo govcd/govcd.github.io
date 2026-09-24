@@ -2922,14 +2922,14 @@ function initPhotoHoverZoom() {
 
   // Delegated mouseover/mouseout across document
   document.body.addEventListener('mouseover', (e) => {
-    const target = e.target.closest('.tbl-thumb, .compact-photo, .card-av, .photo-card img, .photo-card .img-wrap img, .dos-avatar');
+    const target = e.target.closest('.tbl-thumb, .compact-photo, .card-av, .dos-avatar');
     if (target) {
       showPreview(target);
     }
   });
 
   document.body.addEventListener('mouseout', (e) => {
-    const target = e.target.closest('.tbl-thumb, .compact-photo, .card-av, .photo-card img, .photo-card .img-wrap img, .dos-avatar');
+    const target = e.target.closest('.tbl-thumb, .compact-photo, .card-av, .dos-avatar');
     if (target) {
       if (e.relatedTarget && target.contains(e.relatedTarget)) return;
       hidePreview();
