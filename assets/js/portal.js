@@ -574,6 +574,18 @@ function showLoadingState() {
 }
 
 /* ── SEARCH & FILTERS ────────────────────────────────────── */
+function getHallShortName(hallStr) {
+  if (!hallStr) return '';
+  const h = String(hallStr).trim();
+  if (h.includes('বিজয়') && h.includes('দক্ষিণ')) return 'Bijoy 24 / South';
+  if (h.includes('বিজয়')) return 'Bijoy 24';
+  if (h.includes('দক্ষিণ')) return 'South';
+  if (h.includes('উত্তর')) return 'North';
+  if (h.includes('আন্তর্জাতিক')) return 'International';
+  return h.replace(/\s*ছাত্রাবাস\s*/g, '').trim();
+}
+window.getHallShortName = getHallShortName;
+
 function setupSearchAndFilters() {
   const sInput = $('searchInput');
   const clearBtn = $('clearSearchBtn');
@@ -669,15 +681,15 @@ function setupSearchAndFilters() {
       hallWrap.className = 'flt-grp hall-flt-grp';
       hallWrap.style.display = 'none';
       hallWrap.innerHTML = `
-        <label class="flt-lbl" for="hallFilter" style="color:var(--accent);font-weight:700;"><i class="fa-solid fa-hotel" style="margin-right:4px;"></i>Hall / ছাত্রাবাস</label>
-        <select id="hallFilter" class="filter-select" style="border-color:rgba(59,130,246,0.4);font-weight:600;">
-          <option value="all">All Halls (সকল ছাত্রাবাস)</option>
-          <option value="all_allotted">🏛️ Allotted Students (সকল বরাদ্দপ্রাপ্ত)</option>
-          <option value="বিজয় ২৪ ছাত্রাবাস">বিজয় ২৪ ছাত্রাবাস (Bijoy 24)</option>
-          <option value="দক্ষিণ ছাত্রাবাস">দক্ষিণ ছাত্রাবাস (South Hall)</option>
-          <option value="উত্তর ছাত্রাবাস">উত্তর ছাত্রাবাস (North Hall)</option>
-          <option value="আন্তর্জাতিক ছাত্রাবাস">আন্তর্জাতিক ছাত্রাবাস (International)</option>
-          <option value="none">অনাবাসিক (Non-Resident Only)</option>
+        <label class="flt-lbl" for="hallFilter" style="color:var(--accent);font-weight:700;"><i class="fa-solid fa-hotel" style="margin-right:3px;"></i>Hall</label>
+        <select id="hallFilter" class="filter-select" style="border-color:rgba(59,130,246,0.4);font-weight:600;width:118px;max-width:122px;padding:0 8px;font-size:12px;">
+          <option value="all">All Halls</option>
+          <option value="allotted">Allotted</option>
+          <option value="bijoy_24">Bijoy 24</option>
+          <option value="north">North</option>
+          <option value="south">South</option>
+          <option value="international">International</option>
+          <option value="none">Non-Resident</option>
         </select>
       `;
       groupWrap.parentNode.insertBefore(hallWrap, groupWrap.nextSibling);
@@ -805,15 +817,15 @@ function setupFilterModal() {
       div.style.marginBottom = '6px';
       div.style.display = 'none';
       div.innerHTML = `
-        <label class="f-lbl"><i class="fa-solid fa-hotel" style="color:var(--accent);margin-right:6px;"></i>ছাত্রাবাস / Hall (HSC-28 Allotment)</label>
+        <label class="f-lbl"><i class="fa-solid fa-hotel" style="color:var(--accent);margin-right:6px;"></i>Hall (HSC-28 Allotment)</label>
         <select class="f-input" id="fModalHall">
-          <option value="all">All Halls (সকল ছাত্রাবাস ও অনাবাসিক)</option>
-          <option value="all_allotted">🏛️ Allotted Students Only (সকল ছাত্রাবাস বরাদ্দপ্রাপ্ত ছাত্ররা)</option>
-          <option value="বিজয় ২৪ ছাত্রাবাস">বিজয় ২৪ ছাত্রাবাস (Bijoy 24 Hall)</option>
-          <option value="দক্ষিণ ছাত্রাবাস">দক্ষিণ ছাত্রাবাস (South Hall)</option>
-          <option value="উত্তর ছাত্রাবাস">উত্তর ছাত্রাবাস (North Hall)</option>
-          <option value="আন্তর্জাতিক ছাত্রাবাস">আন্তর্জাতিক ছাত্রাবাস (International Hall)</option>
-          <option value="none">অনাবাসিক (Non-Resident Only)</option>
+          <option value="all">All Halls</option>
+          <option value="allotted">Allotted Only</option>
+          <option value="bijoy_24">Bijoy 24</option>
+          <option value="north">North</option>
+          <option value="south">South</option>
+          <option value="international">International</option>
+          <option value="none">Non-Resident</option>
         </select>
       `;
       const incField = $('fModalIncomeBox');
@@ -1129,9 +1141,19 @@ function matchStudentFilters(s, f) {
   // Hall Filter (HSC-28 Allotment)
   if (f.hall && f.hall !== 'all') {
     const sHall = (s.hall || '').trim();
-    if (f.hall === 'all_allotted' && !sHall) return false;
-    if (f.hall === 'none' && sHall) return false;
-    if (f.hall !== 'all_allotted' && f.hall !== 'none' && !sHall.includes(f.hall)) return false;
+    if ((f.hall === 'all_allotted' || f.hall === 'allotted') && !sHall) return false;
+    if ((f.hall === 'none' || f.hall === 'non_resident') && sHall) return false;
+    if (f.hall === 'bijoy_24' || f.hall === 'bijoy' || f.hall === 'বিজয় ২৪ ছাত্রাবাস') {
+      if (!sHall.includes('বিজয়')) return false;
+    } else if (f.hall === 'north' || f.hall === 'উত্তর ছাত্রাবাস') {
+      if (!sHall.includes('উত্তর')) return false;
+    } else if (f.hall === 'south' || f.hall === 'দক্ষিণ ছাত্রাবাস') {
+      if (!sHall.includes('দক্ষিণ')) return false;
+    } else if (f.hall === 'international' || f.hall === 'আন্তর্জাতিক ছাত্রাবাস') {
+      if (!sHall.includes('আন্তর্জাতিক')) return false;
+    } else if (f.hall !== 'all_allotted' && f.hall !== 'allotted' && f.hall !== 'none' && f.hall !== 'non_resident') {
+      if (!sHall.includes(f.hall)) return false;
+    }
   }
 
   // Father's Monthly Income Filter
@@ -1453,8 +1475,12 @@ function updateActiveFilterChips() {
   // Hall Filter Active Chip
   if (state.filters.hall && state.filters.hall !== 'all') {
     let hLabel = state.filters.hall;
-    if (hLabel === 'all_allotted') hLabel = '🏛️ Allotted Students';
-    else if (hLabel === 'none') hLabel = 'অনাবাসিক (Non-Resident)';
+    if (hLabel === 'all_allotted' || hLabel === 'allotted') hLabel = 'Allotted';
+    else if (hLabel === 'none' || hLabel === 'non_resident') hLabel = 'Non-Resident';
+    else if (hLabel === 'bijoy_24' || hLabel === 'bijoy' || hLabel === 'বিজয় ২৪ ছাত্রাবাস') hLabel = 'Bijoy 24';
+    else if (hLabel === 'north' || hLabel === 'উত্তর ছাত্রাবাস') hLabel = 'North';
+    else if (hLabel === 'south' || hLabel === 'দক্ষিণ ছাত্রাবাস') hLabel = 'South';
+    else if (hLabel === 'international' || hLabel === 'আন্তর্জাতিক ছাত্রাবাস') hLabel = 'International';
     active.push({ key: 'hall', label: `Hall: ${hLabel}` });
   }
 
@@ -2014,7 +2040,7 @@ function renderPhotosGrid(students, container) {
               <span class="p-sec-tag ${badgeInfo.cls}">${badgeInfo.text}</span>
             </div>
             <h4 title="${esc(s.student_name_en || 'Unknown Student')}">${esc(s.student_name_en || 'Unknown Student')}</h4>
-            ${s.hall ? `<div class="p-hall-tag" title="${esc(s.hall)}" style="font-size:11px;color:var(--accent);font-weight:700;margin-top:2px;display:flex;align-items:center;justify-content:center;gap:4px;"><i class="fa-solid fa-hotel" style="font-size:10px;"></i> ${esc(s.hall.replace(' ছাত্রাবাস', ''))}</div>` : ''}
+            ${s.hall ? `<div class="p-hall-tag" title="${esc(s.hall)}" style="font-size:11px;color:var(--accent);font-weight:700;margin-top:2px;display:flex;align-items:center;justify-content:center;gap:4px;"><i class="fa-solid fa-hotel" style="font-size:10px;"></i> ${esc(getHallShortName(s.hall))}</div>` : ''}
           </div>
         `;
       }).join('')}
@@ -2082,7 +2108,7 @@ function renderDetailedCards(students, container) {
                   <span class="badge ${gbClass}">${esc(s.group_name || 'Science')}</span>
                   ${secBadgeText ? `<span class="badge badge-sec">${esc(secBadgeText)}</span>` : ''}
                   ${pracBadgeText ? `<span class="badge badge-prac">${esc(pracBadgeText)}</span>` : ''}
-                  ${s.hall ? `<span class="badge badge-hall" style="background:rgba(59,130,246,0.18);color:var(--accent);font-weight:600;"><i class="fa-solid fa-hotel" style="margin-right:3px;"></i>${esc(s.hall)}</span>` : ''}
+                  ${s.hall ? `<span class="badge badge-hall" style="background:rgba(59,130,246,0.18);color:var(--accent);font-weight:600;"><i class="fa-solid fa-hotel" style="margin-right:3px;"></i>${esc(getHallShortName(s.hall))}</span>` : ''}
                   ${s.blood_group && s.blood_group !== '—' ? `<span class="badge badge-bld">${esc(s.blood_group)}</span>` : ''}
                 </div>
               </div>
@@ -2169,7 +2195,7 @@ function renderCompactGrid(students, container) {
                 <span>#${s.short_roll || (idx+1)}</span> &bull;
                 <span>${s.group_name || ''}</span>
                 ${(state.collegeCode === 'dc' && s.section && !/science|all/i.test(s.section)) ? `&bull; <span>Sec ${s.section}</span>` : ''}
-                ${s.hall ? `&bull; <span style="color:var(--accent);font-weight:700;"><i class="fa-solid fa-hotel" style="font-size:9.5px;"></i> ${esc(s.hall.replace(' ছাত্রাবাস', ''))}</span>` : ''}
+                ${s.hall ? `&bull; <span style="color:var(--accent);font-weight:700;"><i class="fa-solid fa-hotel" style="font-size:9.5px;"></i> ${esc(getHallShortName(s.hall))}</span>` : ''}
               </div>
               <div class="c-adm"><i class="fa-solid fa-ticket" style="font-size:10px;margin-right:3px;"></i>Adm: ${s.admission_roll || '—'}</div>
             </div>
@@ -2308,7 +2334,7 @@ function renderTableView(students, container) {
                       <div class="tbl-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--text-faint);"><i class="fa-solid fa-user"></i></div>
                     `}
                   </td>
-                  <td class="sticky-col-name"><strong>${esc(s.student_name_en || 'Unknown')}</strong>${s.hall ? ` <span class="badge badge-hall" style="font-size:10px;padding:2px 6px;background:rgba(59,130,246,0.18);color:var(--accent);border-radius:4px;font-weight:600;"><i class="fa-solid fa-hotel" style="font-size:9px;"></i> ${esc(s.hall.replace(' ছাত্রাবাস', ''))}</span>` : ''}</td>
+                  <td class="sticky-col-name"><strong>${esc(s.student_name_en || 'Unknown')}</strong>${s.hall ? ` <span class="badge badge-hall" style="font-size:10px;padding:2px 6px;background:rgba(59,130,246,0.18);color:var(--accent);border-radius:4px;font-weight:600;"><i class="fa-solid fa-hotel" style="font-size:9px;"></i> ${esc(getHallShortName(s.hall))}</span>` : ''}</td>
 
                   <!-- Personal (7) -->
                   <td class="bn-text col-group-start">${esc(s.student_name_bn || '—')}</td>
