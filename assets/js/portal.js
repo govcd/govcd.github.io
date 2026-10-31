@@ -2535,7 +2535,7 @@ function openStudentModal(s) {
     infoItem('Religion', s.religion),
     infoItem('Nationality', s.nationality),
     infoItem('Student Phone', s.student_phone, true, s),
-    infoItem('ছাত্রাবাস / Hall', s.hall, false, s),
+    infoItem('Hall', s.hall ? (getHallShortName(s.hall) + ' Hall') : '', false, s),
     infoItem('Student Email', s.student_email),
     infoItem('Birth Reg / NID', s.nid_birth_reg, true, s),
   ].filter(Boolean);
@@ -2750,7 +2750,7 @@ function openStudentModal(s) {
           <span class="dos-badge">${s.group_name || 'Science'}</span>
           ${cleanSec ? `<span class="dos-badge">${cleanSec}</span>` : ''}
           ${cleanPrac ? `<span class="dos-badge">${cleanPrac}</span>` : ''}
-          ${s.hall ? `<span class="dos-badge hall-badge" style="background:rgba(59,130,246,0.18);color:var(--accent);border:1px solid rgba(59,130,246,0.35);font-weight:600;"><i class="fa-solid fa-hotel" style="margin-right:4px;"></i>${esc(s.hall)}</span>` : ''}
+          ${s.hall ? `<span class="dos-badge hall-badge" style="background:rgba(59,130,246,0.18);color:var(--accent);border:1px solid rgba(59,130,246,0.35);font-weight:600;" title="${esc(getHallShortName(s.hall))} Hall"><i class="fa-solid fa-hotel" style="margin-right:4px;"></i>${esc(getHallShortName(s.hall))}</span>` : ''}
           ${s.blood_group && s.blood_group !== '—' ? `<span class="dos-badge bld-badge"><i class="fa-solid fa-droplet" style="color:#EF4444;margin-right:3px;"></i>${s.blood_group}</span>` : ''}
         </div>
       </div>
