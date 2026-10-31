@@ -658,6 +658,44 @@ function setupSearchAndFilters() {
     });
   }
 
+  // Dynamic Dedicated Hall Filter right on Main Toolbar (next to Group filter)
+  let hallWrap = $('hallFilterWrap');
+  if (!hallWrap) {
+    const filtersLeft = document.querySelector('.filters-left');
+    const groupWrap = $('groupFilter')?.closest('.flt-grp');
+    if (filtersLeft && groupWrap) {
+      hallWrap = document.createElement('div');
+      hallWrap.id = 'hallFilterWrap';
+      hallWrap.className = 'flt-grp hall-flt-grp';
+      hallWrap.style.display = 'none';
+      hallWrap.innerHTML = `
+        <label class="flt-lbl" for="hallFilter" style="color:var(--accent);font-weight:700;"><i class="fa-solid fa-hotel" style="margin-right:4px;"></i>Hall / ছাত্রাবাস</label>
+        <select id="hallFilter" class="filter-select" style="border-color:rgba(59,130,246,0.4);font-weight:600;">
+          <option value="all">All Halls (সকল ছাত্রাবাস)</option>
+          <option value="all_allotted">🏛️ Allotted Students (সকল বরাদ্দপ্রাপ্ত)</option>
+          <option value="বিজয় ২৪ ছাত্রাবাস">বিজয় ২৪ ছাত্রাবাস (Bijoy 24)</option>
+          <option value="দক্ষিণ ছাত্রাবাস">দক্ষিণ ছাত্রাবাস (South Hall)</option>
+          <option value="উত্তর ছাত্রাবাস">উত্তর ছাত্রাবাস (North Hall)</option>
+          <option value="আন্তর্জাতিক ছাত্রাবাস">আন্তর্জাতিক ছাত্রাবাস (International)</option>
+          <option value="none">অনাবাসিক (Non-Resident Only)</option>
+        </select>
+      `;
+      groupWrap.parentNode.insertBefore(hallWrap, groupWrap.nextSibling);
+
+      const hSelect = $('hallFilter');
+      if (hSelect) {
+        hSelect.addEventListener('change', () => {
+          state.filters.hall = hSelect.value;
+          const mHall = $('fModalHall');
+          if (mHall) mHall.value = hSelect.value;
+          state.currentPage = 1;
+          state.startPage = 1;
+          applyFilters();
+        });
+      }
+    }
+  }
+
   if (secSelect) {
     secSelect.addEventListener('change', () => {
       state.filters.section = secSelect.value;
@@ -959,6 +997,7 @@ function resetAllFilters() {
   });
   if ($('fModalIncomeMin')) $('fModalIncomeMin').value = '';
   if ($('fModalHall')) $('fModalHall').value = 'all';
+  if ($('hallFilter')) $('hallFilter').value = 'all';
   if ($('fModalIncomeMax')) $('fModalIncomeMax').value = '';
 
   if ($('groupFilter')) $('groupFilter').value = 'all';
@@ -1021,6 +1060,14 @@ function populateAdvancedFilterModal(data) {
   const hallBox = $('fModalHallBox');
   if (hallBox) {
     hallBox.style.display = (hasHallData || (state.collegeCode === 'dc' && state.currentBatch && /28/i.test(state.currentBatch.key || ''))) ? 'flex' : 'none';
+  }
+
+  // Update Toolbar Hall Filter visibility and value
+  const toolbarHallWrap = $('hallFilterWrap');
+  if (toolbarHallWrap) {
+    toolbarHallWrap.style.display = (hasHallData || (state.collegeCode === 'dc' && state.currentBatch && /28/i.test(state.currentBatch.key || ''))) ? 'flex' : 'none';
+    const hSelect = $('hallFilter');
+    if (hSelect) hSelect.value = state.filters.hall || 'all';
   }
 }
 
@@ -1403,6 +1450,14 @@ function updateActiveFilterChips() {
     active.push({ key: 'gpa', label: gpaLabels[state.filters.gpa] || `GPA: ${state.filters.gpa}` });
   }
 
+  // Hall Filter Active Chip
+  if (state.filters.hall && state.filters.hall !== 'all') {
+    let hLabel = state.filters.hall;
+    if (hLabel === 'all_allotted') hLabel = '🏛️ Allotted Students';
+    else if (hLabel === 'none') hLabel = 'অনাবাসিক (Non-Resident)';
+    active.push({ key: 'hall', label: `Hall: ${hLabel}` });
+  }
+
   // Income Filter Chips
   if (state.filters.incomePreset && state.filters.incomePreset !== 'all') {
     const presetLabels = {
@@ -1527,6 +1582,10 @@ function removeFilter(key) {
     if (modalEl && $(modalEl)) $(modalEl).value = 'all';
     if (key === 'group' && $('groupFilter')) $('groupFilter').value = 'all';
     if (key === 'section' && $('sectionFilter')) $('sectionFilter').value = 'all';
+    if (key === 'hall') {
+      if ($('hallFilter')) $('hallFilter').value = 'all';
+      if ($('fModalHall')) $('fModalHall').value = 'all';
+    }
   }
   state.currentPage = 1;
   state.startPage = 1;
@@ -1955,6 +2014,7 @@ function renderPhotosGrid(students, container) {
               <span class="p-sec-tag ${badgeInfo.cls}">${badgeInfo.text}</span>
             </div>
             <h4 title="${esc(s.student_name_en || 'Unknown Student')}">${esc(s.student_name_en || 'Unknown Student')}</h4>
+            ${s.hall ? `<div class="p-hall-tag" title="${esc(s.hall)}" style="font-size:11px;color:var(--accent);font-weight:700;margin-top:2px;display:flex;align-items:center;justify-content:center;gap:4px;"><i class="fa-solid fa-hotel" style="font-size:10px;"></i> ${esc(s.hall.replace(' ছাত্রাবাস', ''))}</div>` : ''}
           </div>
         `;
       }).join('')}
@@ -2109,6 +2169,7 @@ function renderCompactGrid(students, container) {
                 <span>#${s.short_roll || (idx+1)}</span> &bull;
                 <span>${s.group_name || ''}</span>
                 ${(state.collegeCode === 'dc' && s.section && !/science|all/i.test(s.section)) ? `&bull; <span>Sec ${s.section}</span>` : ''}
+                ${s.hall ? `&bull; <span style="color:var(--accent);font-weight:700;"><i class="fa-solid fa-hotel" style="font-size:9.5px;"></i> ${esc(s.hall.replace(' ছাত্রাবাস', ''))}</span>` : ''}
               </div>
               <div class="c-adm"><i class="fa-solid fa-ticket" style="font-size:10px;margin-right:3px;"></i>Adm: ${s.admission_roll || '—'}</div>
             </div>
@@ -2247,7 +2308,7 @@ function renderTableView(students, container) {
                       <div class="tbl-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--text-faint);"><i class="fa-solid fa-user"></i></div>
                     `}
                   </td>
-                  <td class="sticky-col-name"><strong>${esc(s.student_name_en || 'Unknown')}</strong></td>
+                  <td class="sticky-col-name"><strong>${esc(s.student_name_en || 'Unknown')}</strong>${s.hall ? ` <span class="badge badge-hall" style="font-size:10px;padding:2px 6px;background:rgba(59,130,246,0.18);color:var(--accent);border-radius:4px;font-weight:600;"><i class="fa-solid fa-hotel" style="font-size:9px;"></i> ${esc(s.hall.replace(' ছাত্রাবাস', ''))}</span>` : ''}</td>
 
                   <!-- Personal (7) -->
                   <td class="bn-text col-group-start">${esc(s.student_name_bn || '—')}</td>
